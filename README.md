@@ -1,6 +1,19 @@
 # actuator_analysis
 
-## Dependency Installation
+## Table of contents
+
+- [Strategy](#strategy)
+- [Dependency Installation](#dependency-installation)
+- [Run](#run)
+- [Test](#test)
+
+## Strategy
+
+Python was chosen because it's great for quick data analysis. I tried to follow good Python practices such as `venv` although I usually work with C++.
+
+There is a good collection of unit tests and CI, as well.
+
+## Setup
 
 Tested on Ubuntu 24
 
@@ -11,10 +24,11 @@ Tested on Ubuntu 24
 From the repository root:
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 python3 scripts/run_analysis.py
 ```
-
-The script adds `src/` to `sys.path`, so you do not need to install the package first.
 
 ## Test
 
