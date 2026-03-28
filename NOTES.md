@@ -51,6 +51,8 @@ Write up methods
 
 Mention subtracting a window around firing for the actuator latency comparison
 
-Compensate for gravity, inertia, Coriolis, and centripetal forces with a dynamic model
-
 Velocity vs position control
+
+Since your PID controllers don't track low-frequency commands well: add a bit of integral gain. Compensate for gravity, inertia, Coriolis, and centripetal forces with a dynamic model. Or, you may not care about low-frequency tracking.
+
+Use actuator brakes to stabilize during firing.
