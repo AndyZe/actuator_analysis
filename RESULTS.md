@@ -16,6 +16,8 @@ I used time series and Fourier analysis to simplify the problem as much as possi
 
 Python was chosen because it's great for quick data analysis. I tried to follow good Python practices such as `venv`and reusable modules although I usually work with C++. There is a good collection of unit tests and CI, as well.
 
+I didn't filter the data. The noise levels look low already and filtering would introduce latency.
+
 ### What is the "latency of best fit" for each actuator across the entire dataset?
 
 For this calculation I used numpy.correlate. It looks at the entire dataset minus a small window around firing (excluded because firing is not normal motion.)
@@ -49,9 +51,15 @@ Attempting to make better sense of the data, I removed outliers beyond 1.5 stand
 
 I added lines of best fit just because your questions asked if the trend is linear, but it's clear from a quick glance that it's not. Latency is much worse for low-frequency data. Latency is low and relatively constant for high-frequency tracking. The R^2 value is very low, less than 0.1.
 
+If it's important for your application, you could improve low-frequency tracking by:
+
+- Adding some integral gain
+- Switching to velocity control
+- Using a model of the system to calculate feedforwad torque
+
 ### Pitch vs yaw comparison
 
-I've already mentioned before, pitch and yaw had similar latencies across the dataset as a whole (0.2408 seconds for pitch vs 0.2145 seconds for yaw). The latency is a little larger for pitch and I can see from the plot below that the latency for pitch is almost always a positive value (i.e. it almost always lags). Probably this comes from "fighting against gravity", which yaw doesn't need to deal with.
+I've already mentioned, pitch and yaw had similar latencies across the dataset as a whole (0.2408 seconds for pitch vs 0.2145 seconds for yaw). The latency is a little larger for pitch and I can see from the plot below that the latency for pitch is almost always a positive value (i.e. it almost always lags). Probably this comes from "fighting against gravity", which yaw doesn't need to deal with.
 
 ![Latency vs signal centroid frequency](./graphics/latency_vs_signal_frequency.png)
 
@@ -81,6 +89,36 @@ For yaw, the average settling time was Xs.
 
 For pitch, the average settling time was Xs.
 
+### Firing
+
+... It looks like the signals aren't perfectly synchronized. During firing, the /pitch/target plot jumps prior to trigger/fire going high.
+
 ### Remaining thoughts
 
+#### CAN vs ethercat
 
+Ethercat is the obvious choice.
+
+#### 
+
+#### Choice of actuator
+
+Harmonic drives are generally more accurate and harder to backdrive than single-stage planetary geartrains. A harmonic drive would likely be preferred for this application. There are other actuator types to consider, as well, which I don't know so much about.
+
+#### Position vs velocity control
+
+In the robotics world, it's been known for decades that the choice of velocity control or position control has a large effect on how the robot behaves. For example, Duchaine (2007) showed that a robot can be guided through a maze 18% faster if velocity control is used.
+
+![Duchaine maze experiment](./graphics/duchaine_maze.png)
+
+Velocity control is generally chosen for faster tracking or smoother output. Position control is generally chosen for a more accurate final position. You need both accuracy and speed so it might be hard to choose.
+
+#### Actuator brakes
+
+I believe it takes a few hundred milliseconds for actuator brakes to activate. You could engage the brakes before the turret fires to ensure it's completely stable.
+
+#### Smith predictor
+
+In control theory, there's a concept called a Smith predictor. For linear systems with fixed latency, you can implement a Smith predictor to completely counteract the affects of latency.
+
+You can do something similar for nonlinear systems by predicting the state of the system forward, but it's not as elegant or perfect as far as I know.
