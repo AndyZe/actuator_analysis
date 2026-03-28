@@ -9,31 +9,29 @@ Trigger seems to have an effect from ~18:08:15.65 to 18:08:28.71
 
 ## Latency comparison between actuators
 
-- I won't filter the data. The noise levels look low already and filtering would just introduce latency.
+- [ ] Calculate latency between signals with cross-correlation (numpy.correlate)
 
-- Calculate latency between signals with cross-correlation (numpy.correlate)
-
-- Throw out data around trigger/fire since that's not a normal motion.
+- [ ] Throw out data around trigger/fire since that's not a normal motion.
 
 ## Motion magnitude vs latency
 
-- Break each signal pair into, say, 0.5 second chunks
+- [ ] Break each signal pair into, say, 1 minute chunks
 
-- Compute latency for each chunk
+- [ ] Compute latency for each chunk
 
-- Run a Fourier transform, get the primary signal frequency for each chunk
+- [ ] Run a Fourier transform, get the primary signal frequency energy for each chunk
 
-- Plot magnitude vs latency for each axis and all motions.
+- [ ] Plot frequency vs latency for each axis and all motions.
 
-- Try a line of best fit, compute R^2, see if it looks good. If not, try a polynomial.
+- [ ] Try a line of best fit, compute R^2, see if it looks good. If not, try a polynomial.
 
-- For each motion chunk and each axis, calculate and save overshoot and settling time.
+- [ ] For each motion chunk and each axis, calculate and save overshoot and settling time.
 
 ## Deflection when triggered
 
-- Crop the data around trigger/fire going to 1
+- [ ] Crop the data around trigger/fire going to 1
 
-- Estimate magnitude of deflection
+- [ ] Estimate magnitude of deflection
 
 ## Bonus
 
@@ -42,6 +40,10 @@ Make a nice plot of inaccuracy at 100 yards relative to drone
 ## Include in writeup
 
 Harmonic vs planetary vs ...
+
+I didn't filter the data. The noise levels look low already and filtering would just introduce latency.
+
+It looks like the signals aren't perfectly synchronized. During firing, the /pitch/target plot jumps prior to trigger/fire going high.
 
 Preload with FF torque prior to the shot
 
