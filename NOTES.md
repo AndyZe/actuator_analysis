@@ -9,9 +9,9 @@ Trigger seems to have an effect from ~18:08:15.65 to 18:08:28.71
 
 ## Latency comparison between actuators
 
-- [ ] Calculate latency between signals with cross-correlation (numpy.correlate)
+- [x] Calculate latency between signals with cross-correlation (numpy.correlate)
 
-- [ ] Throw out data around trigger/fire since that's not a normal motion.
+- [x] Throw out data around trigger/fire since that's not a normal motion.
 
 ## Motion magnitude vs latency
 

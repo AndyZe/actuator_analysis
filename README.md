@@ -29,7 +29,7 @@ From the repository root:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-python3 scripts/run_analysis.py
+python3 scripts/WHATEVER_SCRIPT.py
 ```
 
 ## Test
