@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -53,3 +55,54 @@ def data_path(config_name: str = "defaults") -> Path:
     if not isinstance(raw, str):
         raise TypeError(f"'data_path' must be a string, got {type(raw).__name__}")
     return expand_path(raw)
+
+
+def parse_instant(s: str) -> datetime:
+    """Parse ``YYYY-MM-DD HH:MM:SS`` with optional fractional seconds on the last segment."""
+    text = s.strip()
+    if not text:
+        raise ValueError("instant string is empty")
+    # First space between date and time -> ``T`` so ``fromisoformat`` works on Python 3.10.
+    norm = text.replace(" ", "T", 1)
+    try:
+        return datetime.fromisoformat(norm)
+    except ValueError as e:
+        raise ValueError(f"not a valid YYYY-MM-DD HH:MM:SS instant: {s!r}") from e
+
+
+@dataclass(frozen=True)
+class KeyTimePoints:
+    """Key recording and trigger instants from config (all timezone-naive)."""
+
+    recording_start: datetime
+    recording_end: datetime
+    trigger_start: datetime
+    trigger_effects_done: datetime
+
+
+_TIME_CONFIG_KEYS = (
+    "recording_start_time",
+    "recording_end_time",
+    "trigger_start_time",
+    "trigger_effects_done",
+)
+
+
+def key_time_points(config_name: str = "defaults") -> KeyTimePoints:
+    """Load ``recording_*`` and ``trigger_*`` instants from the given config file."""
+    cfg = load_yaml(config_name)
+    values: list[datetime] = []
+    for k in _TIME_CONFIG_KEYS:
+        try:
+            raw = cfg[k]
+        except KeyError as e:
+            raise KeyError(f"{k!r} missing in config {config_name!r}") from e
+        if not isinstance(raw, str):
+            raise TypeError(f"{k!r} must be a string, got {type(raw).__name__}")
+        values.append(parse_instant(raw))
+    return KeyTimePoints(
+        recording_start=values[0],
+        recording_end=values[1],
+        trigger_start=values[2],
+        trigger_effects_done=values[3],
+    )

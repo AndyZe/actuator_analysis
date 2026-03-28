@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -148,6 +149,33 @@ def test_extract_stream_prefers_scalar_component() -> None:
     assert stream.component == "Scalars:scalars"
     assert recording.views[0].filtered_column == "/pitch/current:Scalars:scalars"
     assert recording.views[0].selected_columns == ("log_time", "/pitch/current:Scalars:scalars")
+
+
+def test_extract_stream_exclude_time_range_drops_samples_in_closed_interval() -> None:
+    scalar_column = FakeComponentColumn(
+        entity_path="/pitch/current",
+        component="Scalars:scalars",
+        name="/pitch/current:Scalars:scalars",
+        component_type="Scalar",
+    )
+    recording = FakeRecording(
+        FakeSchema(["log_time"], [scalar_column]),
+        {
+            "/pitch/current": FakeTable(
+                {
+                    "log_time": [500.0, 1500.0, 1800.0, 2500.0],
+                    "/pitch/current:Scalars:scalars": [0.5, 1.5, 1.8, 2.5],
+                }
+            )
+        },
+    )
+    lo = datetime(1970, 1, 1, 0, 16, 40)
+    hi = datetime(1970, 1, 1, 0, 33, 20)
+
+    stream = extract_stream(recording, "/pitch/current", exclude_time_range=(lo, hi))
+
+    np.testing.assert_array_equal(stream.timestamps, np.asarray([500.0, 2500.0]))
+    np.testing.assert_array_equal(stream.values, np.asarray([0.5, 2.5]))
 
 
 def test_extract_stream_fill_latest_at_skips_not_null_filter() -> None:
