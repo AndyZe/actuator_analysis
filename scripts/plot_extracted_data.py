@@ -14,7 +14,7 @@ if str(_ROOT / "src") not in sys.path:
 from actuator_analysis.config_loader import results_path
 from actuator_analysis.extract_all_data import load_all_streams
 from actuator_analysis.load_data import PitchData, YawData
-from actuator_analysis.plot_streams import plot_stream
+from actuator_analysis.plot_streams import plot_stream, plot_two_streams
 
 
 def _print_axis_summary(name: str, axis: PitchData | YawData) -> None:
@@ -37,12 +37,26 @@ def main() -> None:
     bundle = result.bundle
     _print_axis_summary("pitch", bundle.pitch)
     _print_axis_summary("yaw", bundle.yaw)
+
     out = results_path() / "pitch_target_firing.png"
     plot_stream(
         bundle.pitch.target_firing,
         title="pitch_target_firing",
         save_path=out,
         show=False,
+    )
+    print(f"wrote plot: {out}")
+
+    out = results_path() / "pitch_current_and_target_except_firing_first_100s.png"
+    plot_two_streams(
+        bundle.pitch.current_except_firing,
+        bundle.pitch.target_except_firing,
+        labels=("pitch_current_except_firing", "pitch_target_except_firing"),
+        colors=("blue", "red"),
+        title="pitch except firing (first 100 s)",
+        save_path=out,
+        show=False,
+        first_seconds=100.0,
     )
     print(f"wrote plot: {out}")
 
