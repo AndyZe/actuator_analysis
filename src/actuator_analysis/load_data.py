@@ -2,12 +2,35 @@
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from actuator_analysis.config_loader import data_path
+
+
+class LoadedRecording:
+    """Holds a local Rerun catalog server and dataset for querying (``rerun-sdk`` 0.29+)."""
+
+    __slots__ = ("_dataset", "_server")
+
+    def __init__(self, server: Any, dataset: Any) -> None:
+        self._server = server
+        self._dataset = dataset
+
+    @property
+    def dataset(self) -> Any:
+        return self._dataset
+
+    def schema(self) -> Any:
+        return self._dataset.schema()
+
+    def close(self) -> None:
+        self._server.shutdown()
 
 
 @dataclass(frozen=True)
@@ -26,11 +49,29 @@ def resolve_recording_path(*, config_name: str = "defaults"):
     return data_path(config_name)
 
 
-def load_recording(*, config_name: str = "defaults") -> Any:
-    """Load the configured Rerun recording."""
+def load_recording(*, config_name: str = "defaults") -> LoadedRecording:
+    """Load the configured Rerun recording via a local catalog server (query API).
+
+    Call :meth:`LoadedRecording.close` when finished to shut down the server.
+    """
     rr = _import_rerun()
     recording_path = resolve_recording_path(config_name=config_name)
-    return rr.recording.load_recording(str(recording_path))
+    path_str = str(recording_path)
+    if not Path(path_str).is_file():
+        raise FileNotFoundError(f"Recording file not found: {path_str}")
+
+    server = rr.server.Server(datasets={"_actuator": [path_str]})
+    try:
+        client = server.client()
+    except Exception as exc:
+        server.shutdown()
+        raise ModuleNotFoundError(
+            "Loading recordings for analysis requires the DataFusion extra. "
+            "Install with: pip install 'rerun-sdk[datafusion]'"
+        ) from exc
+
+    dataset = client.get_dataset("_actuator")
+    return LoadedRecording(server=server, dataset=dataset)
 
 
 def available_timelines(recording: Any) -> tuple[str, ...]:
@@ -55,8 +96,24 @@ def extract_stream(
     timeline: str | None = None,
     component: str | None = None,
     fill_latest_at: bool = False,
+    exclude_time_range: tuple[datetime, datetime] | None = None,
 ) -> StreamData:
-    """Extract one stream from a recording into NumPy arrays."""
+    """Extract one stream from a recording into NumPy arrays.
+
+    If ``exclude_time_range`` is set ``(start, end)``, samples whose timeline value falls
+    in the closed interval ``[start, end]`` (compared as Unix time in seconds, with naive
+    datetimes interpreted as UTC) are dropped. Typical use: omit data during a trigger window.
+    """
+    if isinstance(recording, LoadedRecording):
+        return _extract_stream_from_dataset(
+            recording.dataset,
+            stream_path,
+            timeline=timeline,
+            component=component,
+            fill_latest_at=fill_latest_at,
+            exclude_time_range=exclude_time_range,
+        )
+
     timeline_name = _resolve_timeline(recording, timeline)
     component_column = _resolve_component_column(recording.schema(), stream_path, component)
 
@@ -69,6 +126,50 @@ def extract_stream(
     table = view.select(timeline_name, component_column.name).read_all()
     timestamps = _column_to_numpy(table.column(timeline_name))
     values = _column_to_numpy(table.column(component_column.name))
+
+    if exclude_time_range is not None:
+        lo, hi = exclude_time_range
+        mask = _mask_keep_outside_time_range(timestamps, lo, hi)
+        timestamps = np.asarray(timestamps)[mask]
+        values = np.asarray(values)[mask]
+
+    return StreamData(
+        timestamps=timestamps,
+        values=values,
+        timeline=timeline_name,
+        component=component_column.component,
+        column_name=component_column.name,
+    )
+
+
+def _extract_stream_from_dataset(
+    dataset: Any,
+    stream_path: str,
+    *,
+    timeline: str | None,
+    component: str | None,
+    fill_latest_at: bool,
+    exclude_time_range: tuple[datetime, datetime] | None,
+) -> StreamData:
+    from datafusion import col
+
+    timeline_name = _resolve_timeline(dataset, timeline)
+    component_column = _resolve_component_column(dataset.schema(), stream_path, component)
+
+    view = dataset.filter_contents([stream_path])
+    df = view.reader(index=timeline_name, fill_latest_at=fill_latest_at)
+    if not fill_latest_at:
+        df = df.filter(col(component_column.name).is_not_null())
+    df = df.select(timeline_name, component_column.name)
+    table = df.to_arrow_table()
+    timestamps = _column_to_numpy(table.column(timeline_name))
+    values = _column_to_numpy(table.column(component_column.name))
+
+    if exclude_time_range is not None:
+        lo, hi = exclude_time_range
+        mask = _mask_keep_outside_time_range(timestamps, lo, hi)
+        timestamps = np.asarray(timestamps)[mask]
+        values = np.asarray(values)[mask]
 
     return StreamData(
         timestamps=timestamps,
@@ -103,6 +204,38 @@ def load_streams(
         )
         for stream_path in requested_paths
     }
+
+
+def _datetime_to_unix_seconds(dt: datetime) -> float:
+    """Convert to Unix seconds; naive datetimes are treated as UTC."""
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).timestamp()
+    return float(calendar.timegm(dt.utctimetuple())) + dt.microsecond * 1e-6
+
+
+def _timestamps_as_unix_seconds(timestamps: np.ndarray) -> np.ndarray:
+    """Rerun timelines are often int64 nanoseconds since epoch; otherwise seconds as float."""
+    t = np.asarray(timestamps, dtype=np.float64)
+    if t.size == 0:
+        return t
+    max_abs = float(np.nanmax(np.abs(t)))
+    if max_abs > 1e12:
+        return t * 1e-9
+    return t
+
+
+def _mask_keep_outside_time_range(
+    timestamps: np.ndarray,
+    lo: datetime,
+    hi: datetime,
+) -> np.ndarray:
+    if lo > hi:
+        raise ValueError("exclude_time_range must satisfy start <= end")
+    lo_s = _datetime_to_unix_seconds(lo)
+    hi_s = _datetime_to_unix_seconds(hi)
+    t_s = _timestamps_as_unix_seconds(timestamps)
+    in_excluded = (t_s >= lo_s) & (t_s <= hi_s)
+    return ~in_excluded
 
 
 def _import_rerun() -> Any:

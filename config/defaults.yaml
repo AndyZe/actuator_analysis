@@ -1,1 +1,7 @@
 data_path: "/home/$USER/Documents/motor.rrd"
+recording_start_time: "2025-11-05 18:00:48.0"
+recording_end_time: "2025-11-05 20:51:40"
+# A shot is triggered at this stamp
+trigger_start_time: "2025-11-05 18:08:15.65"
+# Motion due to firing is gone by this stamp
+trigger_effects_done: "2025-11-05 18:08:28.71"

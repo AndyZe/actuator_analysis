@@ -1,9 +1,11 @@
-Significant motions at:
-01:05, 02:14, 06:54, 07:22, ...
+Recording starts at 2025-11-05 18:00:48.0, ends at ~ 2025-11-05 20:51:40
 
-trigger/fire goes to 1 at 08:15.65, no data prior.
+Significant motions at:
+18:01:05, 18:02:14, 18:06:54, 18:07:22, ...
+
+trigger/fire goes to 1 at 18:08:15.65, no data prior.
 Then it stays at 1 for ~the rest of the dataset.
-Trigger seems to have an effect from ~08:15.65 to 08:28.71
+Trigger seems to have an effect from ~18:08:15.65 to 18:08:28.71
 
 ## Latency comparison between actuators
 
@@ -44,3 +46,5 @@ Harmonic vs planetary vs ...
 Preload with FF torque prior to the shot
 
 Write up methods
+
+Mention subtracting a window around firing for the actuator latency comparison

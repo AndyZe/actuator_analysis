@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "actuator-analysis"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.26", "pyyaml>=6.0", "rerun-sdk>=0.20"]
+dependencies = ["numpy>=1.26", "pyyaml>=6.0", "rerun-sdk[datafusion]>=0.29"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
