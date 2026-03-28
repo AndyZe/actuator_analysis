@@ -12,9 +12,27 @@ if str(_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_ROOT / "src"))
 
 from actuator_analysis.config_loader import key_time_points
-from actuator_analysis.load_data import available_streams, extract_stream, load_recording
+from actuator_analysis.load_data import (
+    PitchData,
+    YawData,
+    available_streams,
+    load_motor_axis_data,
+    load_recording,
+)
 
-PITCH_CURRENT = "/motors/position/pitch/current"
+
+def _print_axis_summary(name: str, axis: PitchData | YawData) -> None:
+    for field in (
+        "current_except_firing",
+        "target_except_firing",
+        "current_firing",
+        "target_firing",
+    ):
+        stream = getattr(axis, field)
+        print(
+            f"{name}.{field}: timeline={stream.timeline!r} "
+            f"component={stream.component!r} samples={len(stream.timestamps)}"
+        )
 
 
 def main() -> None:
@@ -23,16 +41,9 @@ def main() -> None:
     try:
         streams = available_streams(recording)
         print("available_streams:", streams)
-        pitch_except_firing = extract_stream(
-            recording,
-            PITCH_CURRENT,
-            exclude_time_range=(kp.trigger_start, kp.trigger_effects_done),
-        )
-        print(
-            f"{PITCH_CURRENT}: timeline={pitch_except_firing.timeline!r} "
-            f"component={pitch_except_firing.component!r} "
-            f"samples={len(pitch_except_firing.timestamps)}"
-        )
+        bundle = load_motor_axis_data(recording, kp)
+        _print_axis_summary("pitch", bundle.pitch)
+        _print_axis_summary("yaw", bundle.yaw)
     finally:
         recording.close()
 

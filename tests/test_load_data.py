@@ -4,10 +4,20 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import pytest
 
-from actuator_analysis.load_data import extract_stream, load_streams, resolve_recording_path
+from actuator_analysis.config_loader import KeyTimePoints
+from actuator_analysis.load_data import (
+    DEFAULT_MOTOR_STREAM_PATHS,
+    LoadedRecording,
+    extract_stream,
+    load_motor_axis_data,
+    load_streams,
+    resolve_recording_path,
+)
 
 
 class FakeIndexColumn:
@@ -64,48 +74,64 @@ class FakeTable:
         return self._columns[name]
 
 
-class FakeReader:
-    def __init__(self, table: FakeTable) -> None:
-        self._table = table
+class FakeDataFrame:
+    """Mimics DataFusion DataFrame used by ``_extract_stream_from_dataset``."""
 
-    def read_all(self) -> FakeTable:
+    def __init__(self, table: FakeTable, index: str, fill_latest_at: bool) -> None:
+        self._table = table
+        self.index = index
+        self.fill_latest_at = fill_latest_at
+        self.filter_called = False
+        self.selected_columns: tuple[str, ...] | None = None
+
+    def filter(self, _expr: Any) -> FakeDataFrame:
+        self.filter_called = True
+        return self
+
+    def select(self, *cols: str) -> FakeDataFrame:
+        self.selected_columns = cols
+        return self
+
+    def to_arrow_table(self) -> FakeTable:
         return self._table
 
 
-class FakeView:
-    def __init__(self, table: FakeTable) -> None:
+class FakeDatasetContentsView:
+    def __init__(self, table: FakeTable, dataset: FakeDataset) -> None:
         self._table = table
-        self.filtered_column: str | None = None
-        self.fill_latest_at_called = False
-        self.selected_columns: tuple[str, ...] | None = None
+        self._dataset = dataset
 
-    def filter_is_not_null(self, column: str) -> "FakeView":
-        self.filtered_column = column
-        return self
-
-    def fill_latest_at(self) -> "FakeView":
-        self.fill_latest_at_called = True
-        return self
-
-    def select(self, *columns: str) -> FakeReader:
-        self.selected_columns = columns
-        return FakeReader(self._table)
+    def reader(self, index: str, fill_latest_at: bool = False) -> FakeDataFrame:
+        df = FakeDataFrame(self._table, index, fill_latest_at)
+        self._dataset.last_df = df
+        return df
 
 
-class FakeRecording:
+class FakeDataset:
+    """Mimics Rerun ``Dataset`` query API (``filter_contents`` / ``reader`` chain)."""
+
     def __init__(self, schema: FakeSchema, tables_by_entity: dict[str, FakeTable]) -> None:
         self._schema = schema
-        self._tables_by_entity = tables_by_entity
-        self.views: list[FakeView] = []
+        self._tables = tables_by_entity
+        self.filter_contents_calls = 0
+        self.last_df: FakeDataFrame | None = None
 
     def schema(self) -> FakeSchema:
         return self._schema
 
-    def view(self, *, index: str, contents: str) -> FakeView:
-        del index
-        view = FakeView(self._tables_by_entity[contents])
-        self.views.append(view)
-        return view
+    def filter_contents(self, paths: list[str]) -> FakeDatasetContentsView:
+        self.filter_contents_calls += 1
+        assert len(paths) == 1
+        return FakeDatasetContentsView(self._tables[paths[0]], self)
+
+
+class _FakeServer:
+    def shutdown(self) -> None:
+        pass
+
+
+def make_fake_loaded_recording(schema: FakeSchema, tables_by_entity: dict[str, FakeTable]) -> LoadedRecording:
+    return LoadedRecording(server=_FakeServer(), dataset=FakeDataset(schema, tables_by_entity))
 
 
 def test_resolve_recording_path_uses_config(monkeypatch) -> None:
@@ -129,7 +155,7 @@ def test_extract_stream_prefers_scalar_component() -> None:
         name="/pitch/current:TextDocument:markdown",
         component_type="Text",
     )
-    recording = FakeRecording(
+    dataset = FakeDataset(
         FakeSchema(["log_time"], [scalar_column, label_column]),
         {
             "/pitch/current": FakeTable(
@@ -140,6 +166,7 @@ def test_extract_stream_prefers_scalar_component() -> None:
             )
         },
     )
+    recording = LoadedRecording(server=_FakeServer(), dataset=dataset)
 
     stream = extract_stream(recording, "/pitch/current")
 
@@ -147,8 +174,9 @@ def test_extract_stream_prefers_scalar_component() -> None:
     np.testing.assert_array_equal(stream.values, np.asarray([0.1, 0.2, 0.3]))
     assert stream.timeline == "log_time"
     assert stream.component == "Scalars:scalars"
-    assert recording.views[0].filtered_column == "/pitch/current:Scalars:scalars"
-    assert recording.views[0].selected_columns == ("log_time", "/pitch/current:Scalars:scalars")
+    assert dataset.last_df is not None
+    assert dataset.last_df.filter_called is True
+    assert dataset.last_df.selected_columns == ("log_time", "/pitch/current:Scalars:scalars")
 
 
 def test_extract_stream_exclude_time_range_drops_samples_in_closed_interval() -> None:
@@ -158,7 +186,7 @@ def test_extract_stream_exclude_time_range_drops_samples_in_closed_interval() ->
         name="/pitch/current:Scalars:scalars",
         component_type="Scalar",
     )
-    recording = FakeRecording(
+    recording = make_fake_loaded_recording(
         FakeSchema(["log_time"], [scalar_column]),
         {
             "/pitch/current": FakeTable(
@@ -178,6 +206,111 @@ def test_extract_stream_exclude_time_range_drops_samples_in_closed_interval() ->
     np.testing.assert_array_equal(stream.values, np.asarray([0.5, 2.5]))
 
 
+def test_extract_stream_include_time_range_keeps_samples_in_closed_interval() -> None:
+    scalar_column = FakeComponentColumn(
+        entity_path="/pitch/current",
+        component="Scalars:scalars",
+        name="/pitch/current:Scalars:scalars",
+        component_type="Scalar",
+    )
+    recording = make_fake_loaded_recording(
+        FakeSchema(["log_time"], [scalar_column]),
+        {
+            "/pitch/current": FakeTable(
+                {
+                    "log_time": [500.0, 1500.0, 1800.0, 2500.0],
+                    "/pitch/current:Scalars:scalars": [0.5, 1.5, 1.8, 2.5],
+                }
+            )
+        },
+    )
+    lo = datetime(1970, 1, 1, 0, 16, 40)
+    hi = datetime(1970, 1, 1, 0, 33, 20)
+
+    stream = extract_stream(recording, "/pitch/current", include_time_range=(lo, hi))
+
+    np.testing.assert_array_equal(stream.timestamps, np.asarray([1500.0, 1800.0]))
+    np.testing.assert_array_equal(stream.values, np.asarray([1.5, 1.8]))
+
+
+def test_extract_stream_exclude_and_include_mutually_exclusive() -> None:
+    scalar_column = FakeComponentColumn(
+        entity_path="/pitch/current",
+        component="Scalars:scalars",
+        name="/pitch/current:Scalars:scalars",
+        component_type="Scalar",
+    )
+    recording = make_fake_loaded_recording(
+        FakeSchema(["log_time"], [scalar_column]),
+        {
+            "/pitch/current": FakeTable(
+                {
+                    "log_time": [1.0],
+                    "/pitch/current:Scalars:scalars": [1.0],
+                }
+            )
+        },
+    )
+    lo = datetime(1970, 1, 1)
+    hi = datetime(1970, 1, 2)
+
+    with pytest.raises(ValueError, match="at most one"):
+        extract_stream(
+            recording,
+            "/pitch/current",
+            exclude_time_range=(lo, hi),
+            include_time_range=(lo, hi),
+        )
+
+
+def test_load_motor_axis_data_builds_bundle() -> None:
+    paths = DEFAULT_MOTOR_STREAM_PATHS
+    columns = [
+        FakeComponentColumn(
+            entity_path=path,
+            component="Scalars:scalars",
+            name=f"{path}:Scalars:scalars",
+            component_type="Scalar",
+        )
+        for path in (
+            paths.pitch_current,
+            paths.pitch_target,
+            paths.yaw_current,
+            paths.yaw_target,
+        )
+    ]
+    table = {
+        "log_time": [500.0, 1500.0, 1800.0, 2500.0],
+    }
+    tables = {}
+    for i, col in enumerate(columns):
+        p = col.entity_path
+        tables[p] = FakeTable(
+            {
+                **table,
+                col.name: [0.1 + i, 0.2 + i, 0.3 + i, 0.4 + i],
+            }
+        )
+
+    dataset = FakeDataset(FakeSchema(["log_time"], columns), tables)
+    recording = LoadedRecording(server=_FakeServer(), dataset=dataset)
+    lo = datetime(1970, 1, 1, 0, 16, 40)
+    hi = datetime(1970, 1, 1, 0, 33, 20)
+    kp = KeyTimePoints(
+        recording_start=lo,
+        recording_end=hi,
+        trigger_start=lo,
+        trigger_effects_done=hi,
+    )
+
+    bundle = load_motor_axis_data(recording, kp)
+
+    np.testing.assert_array_equal(bundle.pitch.current_except_firing.timestamps, np.asarray([500.0, 2500.0]))
+    np.testing.assert_array_equal(bundle.pitch.current_firing.timestamps, np.asarray([1500.0, 1800.0]))
+    np.testing.assert_array_equal(bundle.yaw.target_except_firing.values, np.asarray([3.1, 3.4]))
+    assert dataset.filter_contents_calls == 8
+
+
 def test_extract_stream_fill_latest_at_skips_not_null_filter() -> None:
     scalar_column = FakeComponentColumn(
         entity_path="/pitch/current",
@@ -185,7 +318,7 @@ def test_extract_stream_fill_latest_at_skips_not_null_filter() -> None:
         name="/pitch/current:Scalars:scalars",
         component_type="Scalar",
     )
-    recording = FakeRecording(
+    dataset = FakeDataset(
         FakeSchema(["log_time"], [scalar_column]),
         {
             "/pitch/current": FakeTable(
@@ -196,11 +329,13 @@ def test_extract_stream_fill_latest_at_skips_not_null_filter() -> None:
             )
         },
     )
+    recording = LoadedRecording(server=_FakeServer(), dataset=dataset)
 
     extract_stream(recording, "/pitch/current", fill_latest_at=True)
 
-    assert recording.views[0].fill_latest_at_called is True
-    assert recording.views[0].filtered_column is None
+    assert dataset.last_df is not None
+    assert dataset.last_df.fill_latest_at is True
+    assert dataset.last_df.filter_called is False
 
 
 def test_load_streams_extracts_multiple_paths_from_same_recording() -> None:
@@ -216,7 +351,7 @@ def test_load_streams_extracts_multiple_paths_from_same_recording() -> None:
         name="/pitch/voltage:Scalars:scalars",
         component_type="Scalar",
     )
-    recording = FakeRecording(
+    recording = make_fake_loaded_recording(
         FakeSchema(["timestamp"], [current_column, voltage_column]),
         {
             "/pitch/current": FakeTable(
