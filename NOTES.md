@@ -50,3 +50,7 @@ Preload with FF torque prior to the shot
 Write up methods
 
 Mention subtracting a window around firing for the actuator latency comparison
+
+Compensate for gravity, inertia, Coriolis, and centripetal forces with a dynamic model
+
+Velocity vs position control
