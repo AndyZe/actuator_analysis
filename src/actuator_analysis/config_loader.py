@@ -57,6 +57,18 @@ def data_path(config_name: str = "defaults") -> Path:
     return expand_path(raw)
 
 
+def results_path(config_name: str = "defaults") -> Path:
+    """Resolved ``results_path`` from the given config file (default: ``defaults``)."""
+    cfg = load_yaml(config_name)
+    try:
+        raw = cfg["results_path"]
+    except KeyError as e:
+        raise KeyError(f"'results_path' missing in config {config_name!r}") from e
+    if not isinstance(raw, str):
+        raise TypeError(f"'results_path' must be a string, got {type(raw).__name__}")
+    return expand_path(raw)
+
+
 def parse_instant(s: str) -> datetime:
     """Parse ``YYYY-MM-DD HH:MM:SS`` with optional fractional seconds on the last segment."""
     text = s.strip()

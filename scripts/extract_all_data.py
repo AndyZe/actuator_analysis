@@ -11,7 +11,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_ROOT / "src"))
 
-from actuator_analysis.config_loader import key_time_points
+from actuator_analysis.config_loader import key_time_points, results_path
 from actuator_analysis.load_data import (
     PitchData,
     YawData,
@@ -19,6 +19,7 @@ from actuator_analysis.load_data import (
     load_motor_axis_data,
     load_recording,
 )
+from actuator_analysis.plot_streams import plot_stream
 
 
 def _print_axis_summary(name: str, axis: PitchData | YawData) -> None:
@@ -44,6 +45,14 @@ def main() -> None:
         bundle = load_motor_axis_data(recording, kp)
         _print_axis_summary("pitch", bundle.pitch)
         _print_axis_summary("yaw", bundle.yaw)
+        out = results_path() / "pitch_target_firing.png"
+        plot_stream(
+            bundle.pitch.target_firing,
+            title="pitch_target_firing",
+            save_path=out,
+            show=False,
+        )
+        print(f"wrote plot: {out}")
     finally:
         recording.close()
 

@@ -15,6 +15,7 @@ from actuator_analysis.config_loader import (
     load_yaml,
     parse_instant,
     project_root,
+    results_path,
 )
 
 
@@ -34,6 +35,8 @@ def test_load_defaults() -> None:
     assert "data_path" in cfg
     assert isinstance(cfg["data_path"], str)
     assert "motor.rrd" in cfg["data_path"]
+    assert "results_path" in cfg
+    assert isinstance(cfg["results_path"], str)
     for k in (
         "recording_start_time",
         "recording_end_time",
@@ -53,6 +56,14 @@ def test_data_path_matches_defaults_yaml(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("USER", os.environ.get("USER", "testuser"))
     p = data_path()
     assert p.name == "motor.rrd"
+    assert p.parent.name == "Documents"
+    assert str(p).startswith("/home/")
+
+
+def test_results_path_matches_defaults_yaml(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("USER", os.environ.get("USER", "testuser"))
+    p = results_path()
+    assert p.name == "actuator_analysis_results"
     assert p.parent.name == "Documents"
     assert str(p).startswith("/home/")
 
