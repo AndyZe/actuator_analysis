@@ -1,3 +1,1 @@
-"""Actuator analysis package"""
-
-__version__ = "0.0.0"
+"""Actuator analysis package."""
