@@ -12,7 +12,7 @@
 
 ### Strategy
 
-I used times series and Fourier analysis to simplify the problem as much as possible.
+I used time series and Fourier analysis to simplify the problem as much as possible.
 
 Python was chosen because it's great for quick data analysis. I tried to follow good Python practices such as `venv`and reusable modules although I usually work with C++. There is a good collection of unit tests and CI, as well.
 
@@ -57,25 +57,29 @@ I've already mentioned before, pitch and yaw had similar latencies across the da
 
 #### Overshoot of pitch and yaw
 
-To analyze overshoot, I shifted the `current` signal backward to align with the `target` signal. It was shifted by the same latency I had calculated with numpy.correlate previously. This is important, otherwise latency counts as settling time. Then I used a function to identify individual signal reversal events and calculated overshoot for each one. Signal reversal was detected by checking the sign of the slope estimate, where slope was estimated from smoothed first differences. The smoothing was a simple moving average. (A Butterworth low-pass filter would be better).
+To analyze overshoot, I shifted the `current` signal backward to align with the `target` signal. It was shifted by the same latency I had calculated with numpy.correlate previously. This is important, otherwise latency counts as settling time. Again, I intentionally skipped a short window around firing because that's not normal motion.
+
+Then I used a function to identify individual signal reversal events and calculated overshoot for each one. Signal reversal was detected by checking the sign of the slope estimate, where slope was estimated from smoothed first differences. The smoothing was a simple moving average. (A Butterworth low-pass filter would be better).
 
 Finally, for simplicity, I only kept reversal events which were similar to a step. With this assumption, it was fair game to report overshoot as a percentage.
 
 I visually spot-checked the overshoot events detected by the script against the Rerun plots and tuned the algorithm to reduce false positives. It could use some more tuning if I had more time. This type of algorithm is finicky.
 
-For pitch, average overshoot was **-7.80%**. There were 9 overshoot events greater than 10%.
+This overshoot analysis was performed in scripts/overshoot_and_settling.py.
 
 For yaw, average overshoot was **1.43%** and there were 35 overshoot events greater than 10%.
 
-This overshoot analysis was performed in scripts/overshoot.py.
+For pitch, average overshoot was **-7.80%**. There were 9 overshoot events greater than 10%. The negative sign means, pitch undershot more often than it overshot.
 
-The results indicate that pitch may be tuned less aggressively than yaw. There might be safety reason for that; you would not want to shoot too low or too high and damage a person near the ground, for example. I bet there is more inertia about pitch, as well, so it takes more energy to move that joint. Finally, gravity may have been fighting against pitch when inertia does not have that issue.
+The results indicate that pitch may be tuned less aggressively than yaw. I bet there is more inertia about pitch, so it takes more energy to move that joint. Finally, gravity may have been fighting against pitch whereas yaw does not have that issue. The gravity and other dynamics effects could be counteracted by running a dynamic model in the background and providing feedforward torques to the actuators. I've used the Drake simulator to great success with such things in the past.
 
 #### Settling time of pitch and yaw
 
-To analyze settling time, ...
+The data pipeline for settling time was the same as overshoot so I'll skip straight to reporting results. I used a 5% settling threshold.
 
-Results for settling time...
+For yaw, the average settling time was Xs.
+
+For pitch, the average settling time was Xs.
 
 ### Remaining thoughts
 

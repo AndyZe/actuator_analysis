@@ -39,6 +39,7 @@ MIN_REVERSAL_SPAN_S = 0.20
 MIN_REVERSAL_AMPLITUDE_FRACTION = 0.02
 REVERSAL_CONFIRMATION_S = 0.30
 MIN_OVERSHOOT_REFERENCE_FRACTION = 0.01
+SETTLING_THRESHOLD_FRACTION = 0.05
 LARGE_OVERSHOOT_PERCENT_THRESHOLD = 10.0
 
 
@@ -59,6 +60,7 @@ class OvershootEvent:
     current_turn_timestamp_utc: str
     current_turn_value: float
     overshoot_percent: float
+    settling_time_s: float | None
 
 
 @dataclass(frozen=True)
@@ -89,6 +91,18 @@ class AxisAnalysis:
             1 for event in self.events if event.overshoot_percent > LARGE_OVERSHOOT_PERCENT_THRESHOLD
         )
 
+    @property
+    def average_settling_time_s(self) -> float | None:
+        """Return the mean settling time across positive overshoot events."""
+        settling_times = [
+            event.settling_time_s
+            for event in self.events
+            if event.overshoot_percent > 0.0 and event.settling_time_s is not None
+        ]
+        if not settling_times:
+            return None
+        return float(np.mean(settling_times))
+
 
 @dataclass(frozen=True)
 class OvershootAnalysis:
@@ -101,6 +115,18 @@ class OvershootAnalysis:
     def events(self) -> tuple[OvershootEvent, ...]:
         """Flatten all overshoot events for later plotting."""
         return self.pitch.events + self.yaw.events
+
+    @property
+    def average_settling_time_s(self) -> float | None:
+        """Return the mean settling time across all positive overshoot events."""
+        settling_times = [
+            event.settling_time_s
+            for event in self.events
+            if event.overshoot_percent > 0.0 and event.settling_time_s is not None
+        ]
+        if not settling_times:
+            return None
+        return float(np.mean(settling_times))
 
 
 def _odd_window_samples(dt: float, duration_s: float, *, minimum: int = 1) -> int:
@@ -345,6 +371,35 @@ def _format_utc_timestamp(timestamp_s: float, recording_start_s: float) -> str:
     return format_recording_offset_timestamp(offset_s)
 
 
+def _measure_settling_time_s(
+    *,
+    t_grid: np.ndarray,
+    y_target: np.ndarray,
+    y_current_shifted: np.ndarray,
+    reversal_idx: int,
+    end_idx: int,
+    reference_value: float,
+) -> float | None:
+    """Return the first time current enters and stays within the 5% target band."""
+    if end_idx < reversal_idx:
+        return None
+
+    tolerance = max(abs(reference_value) * SETTLING_THRESHOLD_FRACTION, 1e-6)
+    target_segment = y_target[reversal_idx : end_idx + 1]
+    current_segment = y_current_shifted[reversal_idx : end_idx + 1]
+    if target_segment.size == 0 or current_segment.size != target_segment.size:
+        return None
+
+    in_band = np.abs(current_segment - target_segment) <= tolerance
+    stays_settled = np.logical_and.accumulate(in_band[::-1])[::-1]
+    if not np.any(stays_settled):
+        return None
+
+    settling_rel_idx = int(np.argmax(stays_settled))
+    settling_idx = reversal_idx + settling_rel_idx
+    return float(t_grid[settling_idx] - t_grid[reversal_idx])
+
+
 def _measure_overshoot_events(
     *,
     axis: str,
@@ -393,6 +448,16 @@ def _measure_overshoot_events(
         if abs(reversal_value) < min_reference_value:
             continue
         overshoot_percent = 100.0 * ((current_turn_value - reversal_value) / reversal_value)
+        settling_time_s = None
+        if overshoot_percent > 0.0:
+            settling_time_s = _measure_settling_time_s(
+                t_grid=t_grid,
+                y_target=y_target,
+                y_current_shifted=y_current_shifted,
+                reversal_idx=int(reversal_idx),
+                end_idx=int(next_reversal_idx),
+                reference_value=reversal_value,
+            )
 
         reversal_time_s = float(t_grid[reversal_idx])
         current_turn_time_s = float(t_grid[turn_idx])
@@ -412,6 +477,7 @@ def _measure_overshoot_events(
                 current_turn_timestamp_utc=_format_utc_timestamp(current_turn_time_s, recording_start_s),
                 current_turn_value=current_turn_value,
                 overshoot_percent=float(overshoot_percent),
+                settling_time_s=settling_time_s,
             )
         )
     return tuple(events)
@@ -520,6 +586,12 @@ def _print_axis_report(axis_analysis: AxisAnalysis) -> None:
         if average_overshoot_percent is not None
         else "n/a"
     )
+    average_settling_time_s = axis_analysis.average_settling_time_s
+    average_settling_text = (
+        f"{average_settling_time_s:.6g}s"
+        if average_settling_time_s is not None
+        else "n/a"
+    )
     print(
         f"{axis_analysis.axis}: "
         f"target_n={axis_analysis.target_samples} "
@@ -528,16 +600,19 @@ def _print_axis_report(axis_analysis: AxisAnalysis) -> None:
         f"latency_s={axis_analysis.latency_s:.6g} "
         f"reversal_events={axis_analysis.reversal_count} "
         f"average_overshoot_percent={average_overshoot_text} "
+        f"average_settling_time_s={average_settling_text} "
         f"overshoots_gt_{LARGE_OVERSHOOT_PERCENT_THRESHOLD:.0f}pct="
         f"{axis_analysis.large_overshoot_count}"
     )
     for event in axis_analysis.events:
+        settling_text = f"{event.settling_time_s:.6g}s" if event.settling_time_s is not None else "n/a"
         print(
             "  "
             f"t={event.reversal_timestamp_utc} "
             f"kind={event.reversal_kind} "
             f"direction={event.commanded_direction} "
-            f"overshoot_percent={event.overshoot_percent:.6g}%"
+            f"overshoot_percent={event.overshoot_percent:.6g}% "
+            f"settling_time_s={settling_text}"
         )
 
 
@@ -546,6 +621,13 @@ def main() -> None:
     _print_axis_report(analysis.pitch)
     _print_axis_report(analysis.yaw)
     print(f"total_events={len(analysis.events)}")
+    average_settling_time_s = analysis.average_settling_time_s
+    average_settling_text = (
+        f"{average_settling_time_s:.6g}s"
+        if average_settling_time_s is not None
+        else "n/a"
+    )
+    print(f"average_settling_time_s={average_settling_text}")
 
 
 if __name__ == "__main__":
