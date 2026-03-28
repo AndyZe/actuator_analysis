@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from actuator_analysis.config_loader import data_path
+from actuator_analysis.config_loader import KeyTimePoints, data_path
 
 
 class LoadedRecording:
@@ -42,6 +42,52 @@ class StreamData:
     timeline: str
     component: str
     column_name: str
+
+
+@dataclass(frozen=True)
+class PitchData:
+    """Pitch axis: current/target streams for outside vs inside the trigger window."""
+
+    current_except_firing: StreamData
+    target_except_firing: StreamData
+    current_firing: StreamData
+    target_firing: StreamData
+
+
+@dataclass(frozen=True)
+class YawData:
+    """Yaw axis: current/target streams for outside vs inside the trigger window."""
+
+    current_except_firing: StreamData
+    target_except_firing: StreamData
+    current_firing: StreamData
+    target_firing: StreamData
+
+
+@dataclass(frozen=True)
+class MotorStreamBundle:
+    """Pitch and yaw motor streams with trigger-window splits."""
+
+    pitch: PitchData
+    yaw: YawData
+
+
+@dataclass(frozen=True)
+class MotorStreamPaths:
+    """Rerun entity paths for pitch/yaw current and target."""
+
+    pitch_current: str
+    pitch_target: str
+    yaw_current: str
+    yaw_target: str
+
+
+DEFAULT_MOTOR_STREAM_PATHS = MotorStreamPaths(
+    pitch_current="/motors/position/pitch/current",
+    pitch_target="/motors/position/pitch/target",
+    yaw_current="/motors/position/yaw/current",
+    yaw_target="/motors/position/yaw/target",
+)
 
 
 def resolve_recording_path(*, config_name: str = "defaults"):
@@ -90,55 +136,35 @@ def available_streams(recording: Any) -> tuple[str, ...]:
 
 
 def extract_stream(
-    recording: Any,
+    recording: LoadedRecording,
     stream_path: str,
     *,
     timeline: str | None = None,
     component: str | None = None,
     fill_latest_at: bool = False,
     exclude_time_range: tuple[datetime, datetime] | None = None,
+    include_time_range: tuple[datetime, datetime] | None = None,
 ) -> StreamData:
     """Extract one stream from a recording into NumPy arrays.
 
     If ``exclude_time_range`` is set ``(start, end)``, samples whose timeline value falls
     in the closed interval ``[start, end]`` (compared as Unix time in seconds, with naive
     datetimes interpreted as UTC) are dropped. Typical use: omit data during a trigger window.
+
+    If ``include_time_range`` is set, only samples in that closed interval are kept (mutually
+    exclusive with ``exclude_time_range``). Typical use: keep only the trigger window.
     """
-    if isinstance(recording, LoadedRecording):
-        return _extract_stream_from_dataset(
-            recording.dataset,
-            stream_path,
-            timeline=timeline,
-            component=component,
-            fill_latest_at=fill_latest_at,
-            exclude_time_range=exclude_time_range,
-        )
+    if exclude_time_range is not None and include_time_range is not None:
+        raise ValueError("Specify at most one of exclude_time_range and include_time_range.")
 
-    timeline_name = _resolve_timeline(recording, timeline)
-    component_column = _resolve_component_column(recording.schema(), stream_path, component)
-
-    view = recording.view(index=timeline_name, contents=stream_path)
-    if fill_latest_at:
-        view = view.fill_latest_at()
-    else:
-        view = view.filter_is_not_null(component_column.name)
-
-    table = view.select(timeline_name, component_column.name).read_all()
-    timestamps = _column_to_numpy(table.column(timeline_name))
-    values = _column_to_numpy(table.column(component_column.name))
-
-    if exclude_time_range is not None:
-        lo, hi = exclude_time_range
-        mask = _mask_keep_outside_time_range(timestamps, lo, hi)
-        timestamps = np.asarray(timestamps)[mask]
-        values = np.asarray(values)[mask]
-
-    return StreamData(
-        timestamps=timestamps,
-        values=values,
-        timeline=timeline_name,
-        component=component_column.component,
-        column_name=component_column.name,
+    return _extract_stream_from_dataset(
+        recording.dataset,
+        stream_path,
+        timeline=timeline,
+        component=component,
+        fill_latest_at=fill_latest_at,
+        exclude_time_range=exclude_time_range,
+        include_time_range=include_time_range,
     )
 
 
@@ -150,6 +176,7 @@ def _extract_stream_from_dataset(
     component: str | None,
     fill_latest_at: bool,
     exclude_time_range: tuple[datetime, datetime] | None,
+    include_time_range: tuple[datetime, datetime] | None,
 ) -> StreamData:
     from datafusion import col
 
@@ -168,6 +195,11 @@ def _extract_stream_from_dataset(
     if exclude_time_range is not None:
         lo, hi = exclude_time_range
         mask = _mask_keep_outside_time_range(timestamps, lo, hi)
+        timestamps = np.asarray(timestamps)[mask]
+        values = np.asarray(values)[mask]
+    elif include_time_range is not None:
+        lo, hi = include_time_range
+        mask = _mask_keep_inside_time_range(timestamps, lo, hi)
         timestamps = np.asarray(timestamps)[mask]
         values = np.asarray(values)[mask]
 
@@ -206,6 +238,31 @@ def load_streams(
     }
 
 
+def load_motor_axis_data(
+    recording: LoadedRecording,
+    kp: KeyTimePoints,
+    *,
+    paths: MotorStreamPaths | None = None,
+) -> MotorStreamBundle:
+    """Load pitch and yaw streams, split by trigger window (except vs during firing)."""
+    p = paths or DEFAULT_MOTOR_STREAM_PATHS
+    trig = (kp.trigger_start, kp.trigger_effects_done)
+
+    pitch = PitchData(
+        current_except_firing=extract_stream(recording, p.pitch_current, exclude_time_range=trig),
+        target_except_firing=extract_stream(recording, p.pitch_target, exclude_time_range=trig),
+        current_firing=extract_stream(recording, p.pitch_current, include_time_range=trig),
+        target_firing=extract_stream(recording, p.pitch_target, include_time_range=trig),
+    )
+    yaw = YawData(
+        current_except_firing=extract_stream(recording, p.yaw_current, exclude_time_range=trig),
+        target_except_firing=extract_stream(recording, p.yaw_target, exclude_time_range=trig),
+        current_firing=extract_stream(recording, p.yaw_current, include_time_range=trig),
+        target_firing=extract_stream(recording, p.yaw_target, include_time_range=trig),
+    )
+    return MotorStreamBundle(pitch=pitch, yaw=yaw)
+
+
 def _datetime_to_unix_seconds(dt: datetime) -> float:
     """Convert to Unix seconds; naive datetimes are treated as UTC."""
     if dt.tzinfo is not None:
@@ -236,6 +293,19 @@ def _mask_keep_outside_time_range(
     t_s = _timestamps_as_unix_seconds(timestamps)
     in_excluded = (t_s >= lo_s) & (t_s <= hi_s)
     return ~in_excluded
+
+
+def _mask_keep_inside_time_range(
+    timestamps: np.ndarray,
+    lo: datetime,
+    hi: datetime,
+) -> np.ndarray:
+    if lo > hi:
+        raise ValueError("include_time_range must satisfy start <= end")
+    lo_s = _datetime_to_unix_seconds(lo)
+    hi_s = _datetime_to_unix_seconds(hi)
+    t_s = _timestamps_as_unix_seconds(timestamps)
+    return (t_s >= lo_s) & (t_s <= hi_s)
 
 
 def _import_rerun() -> Any:
