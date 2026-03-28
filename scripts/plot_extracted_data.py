@@ -53,7 +53,20 @@ def main() -> None:
         bundle.pitch.target_except_firing,
         labels=("pitch_current_except_firing", "pitch_target_except_firing"),
         colors=("blue", "red"),
-        title="pitch except firing (first 100 s)",
+        title="pitch (first 100 s)",
+        save_path=out,
+        show=False,
+        first_seconds=100.0,
+    )
+    print(f"wrote plot: {out}")
+
+    out = results_path() / "yaw_current_and_target_except_firing_first_100s.png"
+    plot_two_streams(
+        bundle.yaw.current_except_firing,
+        bundle.yaw.target_except_firing,
+        labels=("yaw_current_except_firing", "yaw_target_except_firing"),
+        colors=("blue", "red"),
+        title="yaw (first 100 s)",
         save_path=out,
         show=False,
         first_seconds=100.0,
