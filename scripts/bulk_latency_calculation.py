@@ -77,7 +77,13 @@ def _latency_from_correlate(
     y_current: np.ndarray,
     dt: float,
 ) -> tuple[int, float]:
-    """``numpy.correlate`` full mode; positive lag ⇒ current lags target."""
+    """Return positive latency when ``current`` lags ``target``.
+
+    For ``np.correlate(a, b, mode="full")``, a negative maximizing lag means ``b``
+    must be shifted earlier to line up with ``a``. With ``a=target`` and
+    ``b=current``, that corresponds to ``current`` occurring later than
+    ``target``.
+    """
     a = y_target - np.mean(y_target)
     b = y_current - np.mean(y_current)
     n = a.size
@@ -85,8 +91,9 @@ def _latency_from_correlate(
     lags = np.arange(-(n - 1), n)
     k = int(np.argmax(corr))
     lag_samples = int(lags[k])
-    latency_s = lag_samples * dt
-    return lag_samples, latency_s
+    current_lag_samples = -lag_samples
+    latency_s = current_lag_samples * dt
+    return current_lag_samples, latency_s
 
 
 def _report_axis(name: str, axis: PitchData | YawData) -> None:

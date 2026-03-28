@@ -2,7 +2,7 @@
 
 For this calculation I used numpy.correlate. It looks at the entire dataset minus a small window around firing (excluded because firing is not normal motion.)
 
-For pitch, the "latency of best fit" was **X seconds**. For yaw, the "latency of best fit" was **X seconds**. Very similar.
+For pitch, the "latency of best fit" was **0.2408 seconds**. For yaw, the "latency of best fit" was **0.2145 seconds**. Very similar.
 
 The script used in this calculation was scripts/bulk_latency_calculation.py.
 
@@ -14,3 +14,7 @@ As a sanity check, here are graphs comparing the two signals for the first 100s.
 
 
 I can tell from the pitch graph already that **pitch does not track slow position changes well**.
+
+### How does latency vary with movement magnitude?
+
+
