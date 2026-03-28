@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Chunked overshoot analysis for high-frequency motion bins.
+"""Whole-dataset overshoot analysis for except-firing motor signals.
 
 For each axis, this script:
 - loads the ``*_except_firing`` target/current motor streams
-- splits both streams into aligned 60-second windows
-- keeps only chunks whose target spectral centroid is at least 1 Hz
-- estimates chunk latency with ``numpy.correlate`` and shifts current backward
-- detects target reversal events and measures aligned-current overshoot
+- computes one global latency across the full dataset
+- shifts ``current`` backward by that latency to align it with ``target``
+- runs ``_find_reversal_candidates()`` on overlapping sliding windows
+- deduplicates reversal timestamps and measures overshoot per event
 
-The script keeps one in-memory event record per reversal so timestamps and
-overshoot values are available for later plotting.
+Each detected event keeps both UTC timestamps for inspection and numeric
+timestamp/overshoot values for later plotting.
 """
 
 from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from datetime import timezone
 from pathlib import Path
 
 # Allow running without installing the package (repo checkout)
@@ -25,26 +26,19 @@ if str(_ROOT / "src") not in sys.path:
 
 import numpy as np
 
-from actuator_analysis.config_loader import format_recording_offset_timestamp
+from actuator_analysis.config_loader import format_recording_offset_timestamp, key_time_points
 from actuator_analysis.extract_all_data import load_all_streams
 from actuator_analysis.load_data import PitchData, StreamData, YawData
 from actuator_analysis.plot_streams import _values_1d_float
 
-CHUNK_DURATION_S = 60.0
-MIN_CENTROID_HZ = 1.0
+SLIDING_WINDOW_DURATION_S = 60.0
+SLIDING_WINDOW_STEP_S = 30.0
 SMOOTHING_WINDOW_S = 0.10
 MIN_REVERSAL_SPAN_S = 0.20
 MIN_REVERSAL_AMPLITUDE_FRACTION = 0.02
-
-
-@dataclass(frozen=True)
-class ChunkedStream:
-    """One time-windowed subset of a stream."""
-
-    index: int
-    window_start_s: float
-    window_end_s: float
-    stream: StreamData
+REVERSAL_CONFIRMATION_S = 0.30
+MIN_OVERSHOOT_REFERENCE_FRACTION = 0.01
+LARGE_OVERSHOOT_PERCENT_THRESHOLD = 10.0
 
 
 @dataclass(frozen=True)
@@ -52,54 +46,52 @@ class OvershootEvent:
     """Overshoot measured around one target reversal."""
 
     axis: str
-    chunk_index: int
-    window_start_s: float
-    window_end_s: float
-    spectral_centroid_hz: float
     reversal_kind: str
     commanded_direction: str
     reversal_index: int
     reversal_timestamp_s: float
+    reversal_timestamp_utc: str
     reversal_time_since_recording_start_s: float
-    reversal_time_since_chunk_start_s: float
     reversal_value: float
+    current_turn_index: int
     current_turn_timestamp_s: float
+    current_turn_timestamp_utc: str
     current_turn_value: float
-    overshoot_value: float
+    overshoot_percent: float
 
 
 @dataclass(frozen=True)
-class ChunkAnalysis:
-    """Chunk-level overshoot metrics and stored reversal events."""
+class AxisAnalysis:
+    """Overshoot results for one full-dataset axis analysis."""
 
     axis: str
-    chunk_index: int
-    window_start_s: float
-    window_end_s: float
     target_samples: int
     current_samples: int
     aligned_samples: int
     dt_s: float
-    spectral_centroid_hz: float
     lag_samples: int
     latency_s: float
     reversal_count: int
     events: tuple[OvershootEvent, ...]
 
+    @property
+    def average_overshoot_percent(self) -> float | None:
+        """Return the mean overshoot percent across detected events."""
+        if not self.events:
+            return None
+        return float(np.mean([event.overshoot_percent for event in self.events]))
 
-@dataclass(frozen=True)
-class AxisAnalysis:
-    """All analyzed chunks and overshoot events for one axis."""
-
-    axis: str
-    total_chunk_pairs: int
-    selected_chunk_pairs: int
-    chunks: tuple[ChunkAnalysis, ...]
+    @property
+    def large_overshoot_count(self) -> int:
+        """Return how many events exceed the large-overshoot threshold."""
+        return sum(
+            1 for event in self.events if event.overshoot_percent > LARGE_OVERSHOOT_PERCENT_THRESHOLD
+        )
 
 
 @dataclass(frozen=True)
 class OvershootAnalysis:
-    """Chunked overshoot analysis for pitch and yaw."""
+    """Whole-dataset overshoot analysis for pitch and yaw."""
 
     pitch: AxisAnalysis
     yaw: AxisAnalysis
@@ -107,7 +99,7 @@ class OvershootAnalysis:
     @property
     def events(self) -> tuple[OvershootEvent, ...]:
         """Flatten all overshoot events for later plotting."""
-        return tuple(_iter_events(self.pitch)) + tuple(_iter_events(self.yaw))
+        return self.pitch.events + self.yaw.events
 
 
 def _timestamps_to_seconds(timestamps: np.ndarray) -> np.ndarray:
@@ -139,47 +131,6 @@ def _sorted_stream_arrays(stream: StreamData) -> tuple[np.ndarray, np.ndarray]:
     return t_s[order], y[order]
 
 
-def _chunk_stream(
-    stream: StreamData,
-    *,
-    chunk_duration_s: float,
-    reference_start_s: float,
-) -> tuple[ChunkedStream, ...]:
-    """Split a stream into fixed windows relative to a shared reference start."""
-    t_s, y = _sorted_stream_arrays(stream)
-    if t_s.size == 0:
-        return ()
-
-    chunk_ids = np.floor((t_s - reference_start_s) / chunk_duration_s).astype(int)
-    unique_ids = np.unique(chunk_ids)
-    chunks: list[ChunkedStream] = []
-    for chunk_index in unique_ids:
-        if chunk_index < 0:
-            continue
-        mask = chunk_ids == chunk_index
-        if not np.any(mask):
-            continue
-
-        window_start_s = chunk_index * chunk_duration_s
-        window_end_s = window_start_s + chunk_duration_s
-        chunk_stream = StreamData(
-            timestamps=t_s[mask],
-            values=y[mask],
-            timeline=stream.timeline,
-            component=stream.component,
-            column_name=stream.column_name,
-        )
-        chunks.append(
-            ChunkedStream(
-                index=int(chunk_index),
-                window_start_s=window_start_s,
-                window_end_s=window_end_s,
-                stream=chunk_stream,
-            )
-        )
-    return tuple(chunks)
-
-
 def _aligned_uniform_series(
     target: StreamData,
     current: StreamData,
@@ -206,23 +157,6 @@ def _aligned_uniform_series(
     return t_grid, y_t_i, y_c_i, dt
 
 
-def _uniform_resample(stream: StreamData) -> tuple[np.ndarray, float] | None:
-    """Resample one stream onto a uniform grid across its time span."""
-    t_s, y = _sorted_stream_arrays(stream)
-    if t_s.size < 2:
-        return None
-
-    t_lo = float(t_s[0])
-    t_hi = float(t_s[-1])
-    if t_hi <= t_lo:
-        return None
-
-    t_grid = np.linspace(t_lo, t_hi, t_s.size)
-    y_i = np.interp(t_grid, t_s, y)
-    dt = (t_hi - t_lo) / (t_s.size - 1)
-    return y_i, dt
-
-
 def _latency_from_correlate(
     y_target: np.ndarray,
     y_current: np.ndarray,
@@ -240,32 +174,15 @@ def _latency_from_correlate(
     return current_lag_samples, latency_s
 
 
-def _spectral_centroid_hz(stream: StreamData) -> float | None:
-    """Compute a magnitude-weighted spectral centroid for one chunk."""
-    resampled = _uniform_resample(stream)
-    if resampled is None:
-        return None
-
-    y, dt = resampled
-    y = y - np.mean(y)
-    spectrum = np.abs(np.fft.rfft(y))
-    freqs = np.fft.rfftfreq(y.size, d=dt)
-    if spectrum.size <= 1 or freqs.size <= 1:
-        return 0.0
-
-    weights = spectrum[1:]
-    freq_bins = freqs[1:]
-    weight_sum = float(np.sum(weights))
-    if weight_sum <= 0.0:
-        return 0.0
-    return float(np.sum(freq_bins * weights) / weight_sum)
-
-
 def _odd_window_samples(dt: float, duration_s: float, *, minimum: int = 1) -> int:
     samples = max(minimum, int(round(duration_s / dt)))
     if samples % 2 == 0:
         samples += 1
     return samples
+
+
+def _window_samples(dt: float, duration_s: float, *, minimum: int = 1) -> int:
+    return max(minimum, int(round(duration_s / dt)))
 
 
 def _moving_average(y: np.ndarray, window_samples: int) -> np.ndarray:
@@ -313,6 +230,7 @@ def _find_reversal_candidates(
 
     smooth_window = _odd_window_samples(dt, SMOOTHING_WINDOW_S, minimum=3)
     min_span_samples = _odd_window_samples(dt, MIN_REVERSAL_SPAN_S, minimum=3)
+    confirmation_samples = _window_samples(dt, REVERSAL_CONFIRMATION_S, minimum=2)
     y_smooth = _moving_average(y_target, smooth_window)
     dy = np.diff(y_smooth)
     if dy.size < 2:
@@ -333,26 +251,127 @@ def _find_reversal_candidates(
             continue
 
         idx = i
-        if idx < min_span_samples or idx >= y_target.size - min_span_samples:
+        if idx < confirmation_samples or idx >= y_target.size - confirmation_samples:
             continue
         if idx - last_kept_index < min_span_samples:
             continue
 
-        pre_idx = idx - min_span_samples
-        post_idx = idx + min_span_samples
-        pre_move = abs(float(y_smooth[idx] - y_smooth[pre_idx]))
-        post_move = abs(float(y_smooth[post_idx] - y_smooth[idx]))
-        if pre_move < min_move or post_move < min_move:
+        pre_signs = signs[idx - confirmation_samples : idx]
+        post_signs = signs[idx : idx + confirmation_samples]
+        if pre_signs.size < confirmation_samples or post_signs.size < confirmation_samples:
+            continue
+        if not np.all(pre_signs == prev_sign) or not np.all(post_signs == next_sign):
+            continue
+
+        pre_idx = idx - confirmation_samples
+        post_idx = idx + confirmation_samples
+        neighborhood = y_smooth[pre_idx : post_idx + 1]
+        if neighborhood.size < 3:
             continue
 
         if prev_sign > 0 and next_sign < 0:
-            candidates.append((idx, "peak", -1))
+            local_offset = int(np.argmax(neighborhood))
+            reversal_kind = "peak"
+            new_direction = -1
         elif prev_sign < 0 and next_sign > 0:
-            candidates.append((idx, "valley", 1))
+            local_offset = int(np.argmin(neighborhood))
+            reversal_kind = "valley"
+            new_direction = 1
         else:
             continue
-        last_kept_index = idx
+
+        extreme_idx = pre_idx + local_offset
+        if extreme_idx < min_span_samples or extreme_idx >= y_target.size - min_span_samples:
+            continue
+        if extreme_idx - last_kept_index < min_span_samples:
+            continue
+
+        left_shoulder = y_smooth[extreme_idx - confirmation_samples : extreme_idx]
+        right_shoulder = y_smooth[extreme_idx + 1 : extreme_idx + 1 + confirmation_samples]
+        if left_shoulder.size < confirmation_samples or right_shoulder.size < confirmation_samples:
+            continue
+
+        extreme_value = float(y_smooth[extreme_idx])
+        left_level = float(np.median(left_shoulder))
+        right_level = float(np.median(right_shoulder))
+        pre_move = abs(extreme_value - left_level)
+        post_move = abs(right_level - extreme_value)
+        if pre_move < min_move or post_move < min_move:
+            continue
+
+        if reversal_kind == "peak":
+            prominence = extreme_value - max(left_level, right_level)
+        else:
+            prominence = min(left_level, right_level) - extreme_value
+        if prominence < min_move:
+            continue
+
+        candidates.append((extreme_idx, reversal_kind, new_direction))
+        last_kept_index = extreme_idx
     return tuple(candidates)
+
+
+def _sliding_window_bounds(
+    sample_count: int,
+    dt: float,
+) -> tuple[tuple[int, int], ...]:
+    """Return ``(start, end)`` bounds for overlapping reversal-detection windows."""
+    if sample_count <= 0:
+        return ()
+
+    window_samples = _window_samples(dt, SLIDING_WINDOW_DURATION_S, minimum=3)
+    step_samples = _window_samples(dt, SLIDING_WINDOW_STEP_S, minimum=1)
+    if sample_count <= window_samples:
+        return ((0, sample_count),)
+
+    last_start = sample_count - window_samples
+    starts = list(range(0, last_start + 1, step_samples))
+    if starts[-1] != last_start:
+        starts.append(last_start)
+    return tuple((start, min(sample_count, start + window_samples)) for start in starts)
+
+
+def _dedupe_reversal_candidates(
+    candidates: list[tuple[int, str, int]],
+    dt: float,
+) -> tuple[tuple[int, str, int], ...]:
+    """Collapse overlapping window detections into one global event per reversal."""
+    if not candidates:
+        return ()
+
+    dedupe_samples = _window_samples(dt, MIN_REVERSAL_SPAN_S, minimum=1)
+    ordered = sorted(candidates, key=lambda item: (item[0], item[1]))
+    clusters: list[list[tuple[int, str, int]]] = [[ordered[0]]]
+    for candidate in ordered[1:]:
+        cluster = clusters[-1]
+        last_index, last_kind, _ = cluster[-1]
+        if candidate[1] == last_kind and candidate[0] - last_index <= dedupe_samples:
+            cluster.append(candidate)
+            continue
+        clusters.append([candidate])
+
+    merged: list[tuple[int, str, int]] = []
+    for cluster in clusters:
+        indices = [item[0] for item in cluster]
+        kind = cluster[len(cluster) // 2][1]
+        new_direction = -1 if kind == "peak" else 1
+        merged.append((int(round(float(np.median(indices)))), kind, new_direction))
+    return tuple(merged)
+
+
+def _find_sliding_window_reversal_candidates(
+    y_target: np.ndarray,
+    dt: float,
+) -> tuple[tuple[int, str, int], ...]:
+    """Detect target reversals over overlapping windows and map them to global indices."""
+    raw_candidates: list[tuple[int, str, int]] = []
+    for start_idx, end_idx in _sliding_window_bounds(y_target.size, dt):
+        window = y_target[start_idx:end_idx]
+        if window.size < 3:
+            continue
+        for local_index, reversal_kind, new_direction in _find_reversal_candidates(window, dt):
+            raw_candidates.append((start_idx + local_index, reversal_kind, new_direction))
+    return _dedupe_reversal_candidates(raw_candidates, dt)
 
 
 def _find_current_turn_index(
@@ -385,26 +404,36 @@ def _find_current_turn_index(
     return end_idx
 
 
+def _recording_start_s() -> float:
+    """Return the configured recording start as Unix seconds in UTC."""
+    recording_start = key_time_points().recording_start.replace(tzinfo=timezone.utc)
+    return float(recording_start.timestamp())
+
+
+def _format_utc_timestamp(timestamp_s: float, recording_start_s: float) -> str:
+    """Format one absolute Unix timestamp using the repository's UTC helper."""
+    offset_s = float(timestamp_s - recording_start_s)
+    return format_recording_offset_timestamp(offset_s)
+
+
 def _measure_overshoot_events(
     *,
     axis: str,
-    chunk_index: int,
-    window_start_s: float,
-    window_end_s: float,
-    reference_start_s: float,
-    spectral_centroid_hz: float,
+    recording_start_s: float,
     t_grid: np.ndarray,
     y_target: np.ndarray,
     y_current_shifted: np.ndarray,
     dt: float,
 ) -> tuple[OvershootEvent, ...]:
     """Detect target reversals and measure aligned-current overshoot per event."""
-    reversal_candidates = _find_reversal_candidates(y_target, dt)
+    reversal_candidates = _find_sliding_window_reversal_candidates(y_target, dt)
     if not reversal_candidates:
         return ()
 
+    # Percent overshoot becomes unstable when the target at the reversal is too close to zero.
+    min_reference_value = max(float(np.ptp(y_target)) * MIN_OVERSHOOT_REFERENCE_FRACTION, 1e-6)
     events: list[OvershootEvent] = []
-    for event_num, (reversal_idx, reversal_kind, new_direction) in enumerate(reversal_candidates):
+    for event_num, (reversal_idx, reversal_kind, _new_direction) in enumerate(reversal_candidates):
         next_reversal_idx = (
             reversal_candidates[event_num + 1][0]
             if event_num + 1 < len(reversal_candidates)
@@ -425,140 +454,125 @@ def _measure_overshoot_events(
 
         if reversal_kind == "peak":
             current_turn_value = float(np.max(current_segment))
-            overshoot_value = max(0.0, current_turn_value - reversal_value)
             commanded_direction = "decreasing"
+            turn_idx = reversal_idx + int(np.argmax(current_segment))
         else:
             current_turn_value = float(np.min(current_segment))
-            overshoot_value = max(0.0, reversal_value - current_turn_value)
             commanded_direction = "increasing"
+            turn_idx = reversal_idx + int(np.argmin(current_segment))
+
+        if abs(reversal_value) < min_reference_value:
+            continue
+        overshoot_percent = 100.0 * ((current_turn_value - reversal_value) / reversal_value)
 
         reversal_time_s = float(t_grid[reversal_idx])
+        current_turn_time_s = float(t_grid[turn_idx])
+        reversal_offset_s = float(reversal_time_s - recording_start_s)
         events.append(
             OvershootEvent(
                 axis=axis,
-                chunk_index=chunk_index,
-                window_start_s=window_start_s,
-                window_end_s=window_end_s,
-                spectral_centroid_hz=float(spectral_centroid_hz),
                 reversal_kind=reversal_kind,
                 commanded_direction=commanded_direction,
                 reversal_index=int(reversal_idx),
                 reversal_timestamp_s=reversal_time_s,
-                reversal_time_since_recording_start_s=float(reversal_time_s - reference_start_s),
-                reversal_time_since_chunk_start_s=float(reversal_time_s - (reference_start_s + window_start_s)),
+                reversal_timestamp_utc=_format_utc_timestamp(reversal_time_s, recording_start_s),
+                reversal_time_since_recording_start_s=reversal_offset_s,
                 reversal_value=reversal_value,
-                current_turn_timestamp_s=float(t_grid[turn_idx]),
+                current_turn_index=int(turn_idx),
+                current_turn_timestamp_s=current_turn_time_s,
+                current_turn_timestamp_utc=_format_utc_timestamp(current_turn_time_s, recording_start_s),
                 current_turn_value=current_turn_value,
-                overshoot_value=float(overshoot_value),
+                overshoot_percent=float(overshoot_percent),
             )
         )
     return tuple(events)
+
+
+def _empty_axis_analysis(
+    axis: str,
+    *,
+    target_samples: int = 0,
+    current_samples: int = 0,
+) -> AxisAnalysis:
+    return AxisAnalysis(
+        axis=axis,
+        target_samples=target_samples,
+        current_samples=current_samples,
+        aligned_samples=0,
+        dt_s=0.0,
+        lag_samples=0,
+        latency_s=0.0,
+        reversal_count=0,
+        events=(),
+    )
 
 
 def _analyze_axis(
     name: str,
     axis: PitchData | YawData,
 ) -> AxisAnalysis:
-    """Compute chunked overshoot metrics for one axis."""
+    """Compute whole-dataset overshoot metrics for one axis."""
     target = axis.target_except_firing
     current = axis.current_except_firing
+    target_samples = int(_values_1d_float(target.values).size)
+    current_samples = int(_values_1d_float(current.values).size)
 
-    target_times_s = _timestamps_to_seconds(target.timestamps)
-    current_times_s = _timestamps_to_seconds(current.timestamps)
-    if target_times_s.size == 0 or current_times_s.size == 0:
-        return AxisAnalysis(
-            axis=name,
-            total_chunk_pairs=0,
-            selected_chunk_pairs=0,
-            chunks=(),
+    aligned = _aligned_uniform_series(target, current)
+    if aligned is None:
+        return _empty_axis_analysis(
+            name,
+            target_samples=target_samples,
+            current_samples=current_samples,
         )
 
-    reference_start_s = min(float(np.min(target_times_s)), float(np.min(current_times_s)))
-    target_chunks = {
-        chunk.index: chunk
-        for chunk in _chunk_stream(
-            target,
-            chunk_duration_s=CHUNK_DURATION_S,
-            reference_start_s=reference_start_s,
-        )
-    }
-    current_chunks = {
-        chunk.index: chunk
-        for chunk in _chunk_stream(
-            current,
-            chunk_duration_s=CHUNK_DURATION_S,
-            reference_start_s=reference_start_s,
-        )
-    }
+    t_grid, y_target, y_current, dt = aligned
+    lag_samples, latency_s = _latency_from_correlate(y_target, y_current, dt)
+    y_current_shifted = _shift_current_backward(t_grid, y_current, latency_s)
 
-    paired_indices = sorted(set(target_chunks) & set(current_chunks))
-    analyses: list[ChunkAnalysis] = []
-    for chunk_index in paired_indices:
-        target_chunk = target_chunks[chunk_index]
-        current_chunk = current_chunks[chunk_index]
-        centroid_hz = _spectral_centroid_hz(target_chunk.stream)
-        if centroid_hz is None or centroid_hz < MIN_CENTROID_HZ:
-            continue
-
-        aligned = _aligned_uniform_series(target_chunk.stream, current_chunk.stream)
-        if aligned is None:
-            continue
-
-        t_grid, y_target, y_current, dt = aligned
-        lag_samples, latency_s = _latency_from_correlate(y_target, y_current, dt)
-        y_current_shifted = _shift_current_backward(t_grid, y_current, latency_s)
-
-        valid = np.isfinite(y_current_shifted)
-        if np.count_nonzero(valid) < 3:
-            continue
-        first_valid = int(np.argmax(valid))
-        last_valid = int(valid.size - 1 - np.argmax(valid[::-1]))
-        if last_valid - first_valid + 1 < 3:
-            continue
-
-        t_valid = t_grid[first_valid : last_valid + 1]
-        y_target_valid = y_target[first_valid : last_valid + 1]
-        y_current_valid = y_current_shifted[first_valid : last_valid + 1]
-        events = _measure_overshoot_events(
-            axis=name,
-            chunk_index=chunk_index,
-            window_start_s=target_chunk.window_start_s,
-            window_end_s=target_chunk.window_end_s,
-            reference_start_s=reference_start_s,
-            spectral_centroid_hz=float(centroid_hz),
-            t_grid=t_valid,
-            y_target=y_target_valid,
-            y_current_shifted=y_current_valid,
-            dt=dt,
-        )
-        analyses.append(
-            ChunkAnalysis(
-                axis=name,
-                chunk_index=chunk_index,
-                window_start_s=target_chunk.window_start_s,
-                window_end_s=target_chunk.window_end_s,
-                target_samples=int(np.asarray(target_chunk.stream.values).size),
-                current_samples=int(np.asarray(current_chunk.stream.values).size),
-                aligned_samples=int(t_valid.size),
-                dt_s=float(dt),
-                spectral_centroid_hz=float(centroid_hz),
-                lag_samples=lag_samples,
-                latency_s=float(latency_s),
-                reversal_count=len(events),
-                events=events,
-            )
+    valid = np.isfinite(y_current_shifted)
+    if np.count_nonzero(valid) < 3:
+        return _empty_axis_analysis(
+            name,
+            target_samples=target_samples,
+            current_samples=current_samples,
         )
 
+    # The latency shift only creates invalid edges, so trim to the largest valid span once.
+    first_valid = int(np.argmax(valid))
+    last_valid = int(valid.size - 1 - np.argmax(valid[::-1]))
+    if last_valid - first_valid + 1 < 3:
+        return _empty_axis_analysis(
+            name,
+            target_samples=target_samples,
+            current_samples=current_samples,
+        )
+
+    t_valid = t_grid[first_valid : last_valid + 1]
+    y_target_valid = y_target[first_valid : last_valid + 1]
+    y_current_valid = y_current_shifted[first_valid : last_valid + 1]
+    events = _measure_overshoot_events(
+        axis=name,
+        recording_start_s=_recording_start_s(),
+        t_grid=t_valid,
+        y_target=y_target_valid,
+        y_current_shifted=y_current_valid,
+        dt=dt,
+    )
     return AxisAnalysis(
         axis=name,
-        total_chunk_pairs=len(paired_indices),
-        selected_chunk_pairs=len(analyses),
-        chunks=tuple(analyses),
+        target_samples=target_samples,
+        current_samples=current_samples,
+        aligned_samples=int(t_valid.size),
+        dt_s=float(dt),
+        lag_samples=lag_samples,
+        latency_s=float(latency_s),
+        reversal_count=len(events),
+        events=events,
     )
 
 
 def analyze_overshoot() -> OvershootAnalysis:
-    """Run chunked overshoot analysis for both pitch and yaw."""
+    """Run whole-dataset overshoot analysis for both pitch and yaw."""
     result = load_all_streams()
     print("available_streams:", result.available_streams)
     return OvershootAnalysis(
@@ -567,30 +581,31 @@ def analyze_overshoot() -> OvershootAnalysis:
     )
 
 
-def _iter_events(axis_analysis: AxisAnalysis):
-    for chunk in axis_analysis.chunks:
-        yield from chunk.events
-
-
 def _print_axis_report(axis_analysis: AxisAnalysis) -> None:
-    event_count = sum(chunk.reversal_count for chunk in axis_analysis.chunks)
+    average_overshoot_percent = axis_analysis.average_overshoot_percent
+    average_overshoot_text = (
+        f"{average_overshoot_percent:.6g}%"
+        if average_overshoot_percent is not None
+        else "n/a"
+    )
     print(
         f"{axis_analysis.axis}: "
-        f"chunk_pairs={axis_analysis.total_chunk_pairs} "
-        f"selected_chunks={axis_analysis.selected_chunk_pairs} "
-        f"reversal_events={event_count}"
+        f"target_n={axis_analysis.target_samples} "
+        f"current_n={axis_analysis.current_samples} "
+        f"aligned_n={axis_analysis.aligned_samples} "
+        f"latency_s={axis_analysis.latency_s:.6g} "
+        f"reversal_events={axis_analysis.reversal_count} "
+        f"average_overshoot_percent={average_overshoot_text} "
+        f"overshoots_gt_{LARGE_OVERSHOOT_PERCENT_THRESHOLD:.0f}pct="
+        f"{axis_analysis.large_overshoot_count}"
     )
-    for chunk in axis_analysis.chunks:
-        window_start = format_recording_offset_timestamp(chunk.window_start_s)
-        window_end = format_recording_offset_timestamp(chunk.window_end_s)
+    for event in axis_analysis.events:
         print(
             "  "
-            f"chunk={chunk.chunk_index:02d} "
-            f"window=[{window_start}, {window_end}) "
-            f"centroid_hz={chunk.spectral_centroid_hz:.6g} "
-            f"latency_s={chunk.latency_s:.6g} "
-            f"aligned_n={chunk.aligned_samples} "
-            f"reversals={chunk.reversal_count}"
+            f"t={event.reversal_timestamp_utc} "
+            f"kind={event.reversal_kind} "
+            f"direction={event.commanded_direction} "
+            f"overshoot_percent={event.overshoot_percent:.6g}%"
         )
 
 

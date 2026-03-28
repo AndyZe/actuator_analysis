@@ -45,12 +45,28 @@ I've already mentioned before, pitch and yaw had similar latencies across the da
 
 ![Latency vs signal centroid frequency](./graphics/latency_vs_signal_frequency.png)
 
-To analyze overshoot, first we selected 60-second bins containing interesting movements. To do so, we calculated the signal centroid frequency again and discarded any bins with f< 1.0 Hz. Then within all the remaining bins, we shifted the `current` signal backward to align with the `target` signal. This is important, otherwise latency counts as settling time. Then we used a function to identify individual signal reversal events and calculated overshoot for each one. I checked the overshoot events that were detected by the script visually and they seemed reasonable.
+#### Overshoot of pitch and yaw
 
-Results for overshoot...
+To analyze overshoot, I shifted the `current` signal backward to align with the `target` signal. It was shifted by the same latency I had calculated with numpy.correlate previously. This is important, otherwise latency counts as settling time. Then I used a function to identify individual signal reversal events and calculated overshoot for each one. Signal reversal was detected by checking the sign of the slope estimate, where slope was estimated from smoothed first differences. The smoothing was a simple moving average. (A Butterworth low-pass filter would be better).
 
-Overshoot analysis was done in scripts/overshoot.py.
+Finally, for simplicity, I only kept reversal events which were similar to a step. With this assumption, it was fair game to report overshoot as a percentage.
+
+I visually spot-checked the overshoot events detected by the script against the Rerun plots and tuned the algorithm to reduce false positives. It could use some more tuning if I had more time. This type of algorithm is finicky.
+
+For pitch, average overshoot was **-7.80%**. There were 9 overshoot events greater than 10%.
+
+For yaw, average overshoot was **1.43%** and there were 35 overshoot events greater than 10%.
+
+This overshoot analysis was performed in scripts/overshoot.py.
+
+The results indicate that pitch may be tuned less aggressively than yaw. There might be safety reason for that; you would not want to shoot too low or too high and damage a person near the ground, for example. I bet there is more inertia about pitch, as well, so it takes more energy to move that joint. Finally, gravity may have been fighting against pitch when inertia does not have that issue.
+
+#### Settling time of pitch and yaw
 
 To analyze settling time, ...
 
 Results for settling time...
+
+### Remaining thoughts
+
+
