@@ -2,18 +2,9 @@
 
 ## Table of contents
 
-- [Strategy](#strategy)
-- [Dependency Installation](#dependency-installation)
+- [Setup](#setup)
 - [Run](#run)
 - [Test](#test)
-
-## Strategy
-
-I used times series and Fourier analysis to simplify the problem as much as possible.
-
-Python was chosen because it's great for quick data analysis. I tried to follow good Python practices such as `venv` although I usually work with C++.
-
-There is a good collection of unit tests and CI, as well.
 
 ## Setup
 

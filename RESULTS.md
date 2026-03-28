@@ -2,9 +2,19 @@
 
 ## Table of Contents
 
+- [Strategy](#strategy)
 - [What is the "latency of best fit" for each actuator across the entire dataset?](#what-is-the-latency-of-best-fit-for-each-actuator-across-the-entire-dataset)
 - [How does latency vary with movement magnitude?](#how-does-latency-vary-with-movement-magnitude)
 - [Pitch vs yaw comparison](#pitch-vs-yaw-comparison)
+- [Overshoot of pitch and yaw](#overshoot-of-pitch-and-yaw)
+- [Settling time of pitch and yaw](#settling-time-of-pitch-and-yaw)
+- [Remaining thoughts](#remaining-thoughts)
+
+### Strategy
+
+I used times series and Fourier analysis to simplify the problem as much as possible.
+
+Python was chosen because it's great for quick data analysis. I tried to follow good Python practices such as `venv`and reusable modules although I usually work with C++. There is a good collection of unit tests and CI, as well.
 
 ### What is the "latency of best fit" for each actuator across the entire dataset?
 

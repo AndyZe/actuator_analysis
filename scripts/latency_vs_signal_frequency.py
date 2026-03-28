@@ -28,8 +28,13 @@ import numpy as np
 
 from actuator_analysis.config_loader import results_path
 from actuator_analysis.extract_all_data import load_all_streams
+from actuator_analysis.latency import (
+    aligned_uniform_series,
+    latency_from_correlate,
+    sorted_stream_arrays,
+    timestamps_to_seconds,
+)
 from actuator_analysis.load_data import PitchData, StreamData, YawData
-from actuator_analysis.plot_streams import _values_1d_float
 
 CHUNK_DURATION_S = 60.0
 
@@ -77,39 +82,6 @@ class LatencyFrequencyAnalysis:
     yaw: AxisAnalysis
 
 
-def _timestamps_to_seconds(timestamps: np.ndarray) -> np.ndarray:
-    """Convert timestamps to float seconds.
-
-    Supports Rerun's common int64 nanosecond timelines, float-second timelines,
-    and ``datetime64`` values.
-    """
-    t = np.asarray(timestamps)
-    if t.size == 0:
-        return np.asarray([], dtype=np.float64)
-    if np.issubdtype(t.dtype, np.datetime64):
-        return t.astype("datetime64[ns]").astype(np.int64).astype(np.float64) * 1e-9
-
-    t_s = np.asarray(t, dtype=np.float64)
-    max_abs = float(np.nanmax(np.abs(t_s)))
-    if max_abs > 1e12:
-        return t_s * 1e-9
-    return t_s
-
-
-def _sorted_stream_arrays(stream: StreamData) -> tuple[np.ndarray, np.ndarray]:
-    """Return sorted ``(timestamps_s, values)`` arrays trimmed to a common length."""
-    t_s = _timestamps_to_seconds(stream.timestamps)
-    y = _values_1d_float(stream.values)
-    n = min(t_s.size, y.size)
-    if n == 0:
-        return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
-
-    t_s = t_s[:n]
-    y = y[:n]
-    order = np.argsort(t_s)
-    return t_s[order], y[order]
-
-
 def _chunk_stream(
     stream: StreamData,
     *,
@@ -151,35 +123,9 @@ def _chunk_stream(
     return tuple(chunks)
 
 
-def _aligned_uniform_series(
-    target: StreamData,
-    current: StreamData,
-) -> tuple[np.ndarray, np.ndarray, float] | None:
-    """Interpolate target and current onto a common uniform grid over overlap."""
-    t_t, y_t = _sorted_stream_arrays(target)
-    t_c, y_c = _sorted_stream_arrays(current)
-    if t_t.size < 2 or t_c.size < 2:
-        return None
-
-    t_lo = max(float(np.min(t_t)), float(np.min(t_c)))
-    t_hi = min(float(np.max(t_t)), float(np.max(t_c)))
-    if t_hi <= t_lo:
-        return None
-
-    n = max(int(t_t.size), int(t_c.size))
-    if n < 2:
-        return None
-
-    t_grid = np.linspace(t_lo, t_hi, n)
-    y_t_i = np.interp(t_grid, t_t, y_t)
-    y_c_i = np.interp(t_grid, t_c, y_c)
-    dt = (t_hi - t_lo) / (n - 1)
-    return y_t_i, y_c_i, dt
-
-
 def _uniform_resample(stream: StreamData) -> tuple[np.ndarray, float] | None:
     """Resample one stream onto a uniform grid across its time span."""
-    t_s, y = _sorted_stream_arrays(stream)
+    t_s, y = sorted_stream_arrays(stream)
     if t_s.size < 2:
         return None
 
@@ -192,23 +138,6 @@ def _uniform_resample(stream: StreamData) -> tuple[np.ndarray, float] | None:
     y_i = np.interp(t_grid, t_s, y)
     dt = (t_hi - t_lo) / (t_s.size - 1)
     return y_i, dt
-
-
-def _latency_from_correlate(
-    y_target: np.ndarray,
-    y_current: np.ndarray,
-    dt: float,
-) -> tuple[int, float]:
-    """Return positive latency when ``current`` lags ``target``."""
-    a = y_target - np.mean(y_target)
-    b = y_current - np.mean(y_current)
-    n = a.size
-    corr = np.correlate(a, b, mode="full")
-    lags = np.arange(-(n - 1), n)
-    lag_samples = int(lags[int(np.argmax(corr))])
-    current_lag_samples = -lag_samples
-    latency_s = current_lag_samples * dt
-    return current_lag_samples, latency_s
 
 
 def _spectral_centroid_hz(stream: StreamData) -> float | None:
@@ -266,12 +195,15 @@ def _analyze_axis(name: str, axis: PitchData | YawData) -> AxisAnalysis:
         current_chunk = current_chunks[chunk_index]
 
         centroid_hz = _spectral_centroid_hz(target_chunk.stream)
-        aligned = _aligned_uniform_series(target_chunk.stream, current_chunk.stream)
+        aligned = aligned_uniform_series(target_chunk.stream, current_chunk.stream)
         if centroid_hz is None or aligned is None:
             continue
 
-        y_t, y_c, dt = aligned
-        lag_samples, latency_s = _latency_from_correlate(y_t, y_c, dt)
+        lag_samples, latency_s = latency_from_correlate(
+            aligned.y_target,
+            aligned.y_current,
+            aligned.dt_s,
+        )
         analyses.append(
             ChunkAnalysis(
                 axis=name,
@@ -280,8 +212,8 @@ def _analyze_axis(name: str, axis: PitchData | YawData) -> AxisAnalysis:
                 window_end_s=target_chunk.window_end_s,
                 target_samples=int(np.asarray(target_chunk.stream.values).size),
                 current_samples=int(np.asarray(current_chunk.stream.values).size),
-                aligned_samples=int(y_t.size),
-                dt_s=float(dt),
+                aligned_samples=int(aligned.y_target.size),
+                dt_s=float(aligned.dt_s),
                 spectral_centroid_hz=float(centroid_hz),
                 lag_samples=lag_samples,
                 latency_s=float(latency_s),

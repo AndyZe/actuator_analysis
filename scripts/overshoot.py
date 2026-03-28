@@ -28,7 +28,8 @@ import numpy as np
 
 from actuator_analysis.config_loader import format_recording_offset_timestamp, key_time_points
 from actuator_analysis.extract_all_data import load_all_streams
-from actuator_analysis.load_data import PitchData, StreamData, YawData
+from actuator_analysis.latency import aligned_uniform_series, latency_from_correlate
+from actuator_analysis.load_data import PitchData, YawData
 from actuator_analysis.plot_streams import _values_1d_float
 
 SLIDING_WINDOW_DURATION_S = 60.0
@@ -100,78 +101,6 @@ class OvershootAnalysis:
     def events(self) -> tuple[OvershootEvent, ...]:
         """Flatten all overshoot events for later plotting."""
         return self.pitch.events + self.yaw.events
-
-
-def _timestamps_to_seconds(timestamps: np.ndarray) -> np.ndarray:
-    """Convert timestamps to float seconds."""
-    t = np.asarray(timestamps)
-    if t.size == 0:
-        return np.asarray([], dtype=np.float64)
-    if np.issubdtype(t.dtype, np.datetime64):
-        return t.astype("datetime64[ns]").astype(np.int64).astype(np.float64) * 1e-9
-
-    t_s = np.asarray(t, dtype=np.float64)
-    max_abs = float(np.nanmax(np.abs(t_s)))
-    if max_abs > 1e12:
-        return t_s * 1e-9
-    return t_s
-
-
-def _sorted_stream_arrays(stream: StreamData) -> tuple[np.ndarray, np.ndarray]:
-    """Return sorted ``(timestamps_s, values)`` arrays trimmed to a common length."""
-    t_s = _timestamps_to_seconds(stream.timestamps)
-    y = _values_1d_float(stream.values)
-    n = min(t_s.size, y.size)
-    if n == 0:
-        return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
-
-    t_s = t_s[:n]
-    y = y[:n]
-    order = np.argsort(t_s)
-    return t_s[order], y[order]
-
-
-def _aligned_uniform_series(
-    target: StreamData,
-    current: StreamData,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float] | None:
-    """Interpolate target and current onto a common uniform grid over overlap."""
-    t_t, y_t = _sorted_stream_arrays(target)
-    t_c, y_c = _sorted_stream_arrays(current)
-    if t_t.size < 2 or t_c.size < 2:
-        return None
-
-    t_lo = max(float(np.min(t_t)), float(np.min(t_c)))
-    t_hi = min(float(np.max(t_t)), float(np.max(t_c)))
-    if t_hi <= t_lo:
-        return None
-
-    n = max(int(t_t.size), int(t_c.size))
-    if n < 2:
-        return None
-
-    t_grid = np.linspace(t_lo, t_hi, n)
-    y_t_i = np.interp(t_grid, t_t, y_t)
-    y_c_i = np.interp(t_grid, t_c, y_c)
-    dt = (t_hi - t_lo) / (n - 1)
-    return t_grid, y_t_i, y_c_i, dt
-
-
-def _latency_from_correlate(
-    y_target: np.ndarray,
-    y_current: np.ndarray,
-    dt: float,
-) -> tuple[int, float]:
-    """Return positive latency when ``current`` lags ``target``."""
-    a = y_target - np.mean(y_target)
-    b = y_current - np.mean(y_current)
-    n = a.size
-    corr = np.correlate(a, b, mode="full")
-    lags = np.arange(-(n - 1), n)
-    lag_samples = int(lags[int(np.argmax(corr))])
-    current_lag_samples = -lag_samples
-    latency_s = current_lag_samples * dt
-    return current_lag_samples, latency_s
 
 
 def _odd_window_samples(dt: float, duration_s: float, *, minimum: int = 1) -> int:
@@ -517,7 +446,7 @@ def _analyze_axis(
     target_samples = int(_values_1d_float(target.values).size)
     current_samples = int(_values_1d_float(current.values).size)
 
-    aligned = _aligned_uniform_series(target, current)
+    aligned = aligned_uniform_series(target, current)
     if aligned is None:
         return _empty_axis_analysis(
             name,
@@ -525,9 +454,12 @@ def _analyze_axis(
             current_samples=current_samples,
         )
 
-    t_grid, y_target, y_current, dt = aligned
-    lag_samples, latency_s = _latency_from_correlate(y_target, y_current, dt)
-    y_current_shifted = _shift_current_backward(t_grid, y_current, latency_s)
+    lag_samples, latency_s = latency_from_correlate(
+        aligned.y_target,
+        aligned.y_current,
+        aligned.dt_s,
+    )
+    y_current_shifted = _shift_current_backward(aligned.t_grid, aligned.y_current, latency_s)
 
     valid = np.isfinite(y_current_shifted)
     if np.count_nonzero(valid) < 3:
@@ -547,8 +479,8 @@ def _analyze_axis(
             current_samples=current_samples,
         )
 
-    t_valid = t_grid[first_valid : last_valid + 1]
-    y_target_valid = y_target[first_valid : last_valid + 1]
+    t_valid = aligned.t_grid[first_valid : last_valid + 1]
+    y_target_valid = aligned.y_target[first_valid : last_valid + 1]
     y_current_valid = y_current_shifted[first_valid : last_valid + 1]
     events = _measure_overshoot_events(
         axis=name,
@@ -556,14 +488,14 @@ def _analyze_axis(
         t_grid=t_valid,
         y_target=y_target_valid,
         y_current_shifted=y_current_valid,
-        dt=dt,
+        dt=aligned.dt_s,
     )
     return AxisAnalysis(
         axis=name,
         target_samples=target_samples,
         current_samples=current_samples,
         aligned_samples=int(t_valid.size),
-        dt_s=float(dt),
+        dt_s=float(aligned.dt_s),
         lag_samples=lag_samples,
         latency_s=float(latency_s),
         reversal_count=len(events),
