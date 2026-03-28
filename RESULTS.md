@@ -17,10 +17,16 @@ I can tell from the pitch graph already that **pitch does not track slow positio
 
 ### How does latency vary with movement magnitude?
 
-I used the frequency of the signal as a proxy for "magnitude", because I think the question is really asking about frequency response (slow motions vs fast motions). To grok this, I separated the data into 60-second segments (again, excluding a small window around firing because it's not normal motion). Then I calculated the spectral centroid of each segment and the "latency of best fit." Thus I could plot latency vs signal frequency and check if it's linear.
+I used the frequency of the signal as a proxy for "magnitude", because I think the question is really asking about frequency response (slow motions vs fast motions). To grok this, I separated the data into 60-second segments (again, excluding a small window around firing because it's not normal motion). Then I calculated the spectral centroid of target position for each segment and the "latency of best fit." For latency of best fit, again, I used numpy.centroid. Thus I could plot latency vs signal frequency and check if it's linear.
 
 This was implemented in scripts/latency_vs_signal_frequency.py.
 
-The raw plot of latency vs signal centroid frequency is pretty noisy and has a lot of outliers, so it doesn't tell me much. Here it is:
+The raw plot of latency vs signal centroid frequency is pretty noisy and has a lot of outliers, so it didn't tell me much initially. Here it is:
 
 ![Latency vs signal centroid frequency](./graphics/latency_vs_signal_frequency.png)
+
+Attempting to make better sense of the data, I removed outliers beyond 1.5 standard deviations. From eye-balling the graph, the latency is actually worse at lower signal frequencies. Your PID controllers do not track well at low frequencies, as already mentioned before. They seem to be tuned more for high-frequency response, i.e. tuned for better disturbance rejection I suppose.
+
+![Latency vs signal centroid frequency (outliers removed)](./graphics/latency_vs_signal_frequency_without_outliers.png)
+
+I added lines of best fit just because your questions asked if the trend is linear, but it's clear from a quick glance that it's not. Latency is much worse for low-frequency data. Latency is low and relatively constant for high-frequency tracking. The R^2 value is very low, less than 0.1.

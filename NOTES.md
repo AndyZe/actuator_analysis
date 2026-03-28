@@ -15,15 +15,15 @@ Trigger seems to have an effect from ~18:08:15.65 to 18:08:28.71
 
 ## Motion magnitude vs latency
 
-- [ ] Break each signal pair into, say, 1 minute chunks
+- [x] Break each signal pair into, say, 1 minute chunks
 
-- [ ] Compute latency for each chunk
+- [x] Compute latency for each chunk
 
-- [ ] Run a Fourier transform, get the primary signal frequency energy for each chunk
+- [x] Run an FFT, get the primary signal frequency energy for each chunk
 
-- [ ] Plot frequency vs latency for each axis and all motions.
+- [x] Plot frequency vs latency for each axis and all motions.
 
-- [ ] Try a line of best fit, compute R^2, see if it looks good. If not, try a polynomial.
+- [x] Try a line of best fit, compute R^2, see if it looks good. If not, try a polynomial.
 
 - [ ] For each motion chunk and each axis, calculate and save overshoot and settling time.
 

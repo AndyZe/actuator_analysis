@@ -334,7 +334,82 @@ def _plot_latency_vs_centroid(analysis: LatencyFrequencyAnalysis) -> Path:
 
     ax.set_xlabel("spectral centroid (Hz)")
     ax.set_ylabel("latency of best fit (s)")
-    ax.set_title("Latency vs signal centroidfrequency")
+    ax.set_title("Latency vs signal frequency")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    return out
+
+
+def _keep_non_outliers(values: np.ndarray, *, stddevs: float = 2.0) -> np.ndarray:
+    """Return a mask that excludes values farther than ``stddevs`` standard deviations."""
+    if values.size == 0:
+        return np.asarray([], dtype=bool)
+
+    mean = float(np.mean(values))
+    std = float(np.std(values))
+    if std == 0.0:
+        return np.ones(values.shape, dtype=bool)
+    return np.abs(values - mean) <= stddevs * std
+
+
+def _line_of_best_fit(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, float] | None:
+    """Return a linear fit over the x-range plus the fit R^2."""
+    if x.size < 2 or y.size < 2:
+        return None
+    if np.allclose(x, x[0]):
+        return None
+
+    slope, intercept = np.polyfit(x, y, deg=1)
+    x_fit = np.linspace(float(np.min(x)), float(np.max(x)), 100)
+    y_fit = slope * x_fit + intercept
+
+    y_pred = slope * x + intercept
+    ss_res = float(np.sum((y - y_pred) ** 2))
+    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+    r_squared = 1.0 if ss_tot == 0.0 else 1.0 - (ss_res / ss_tot)
+    return x_fit, y_fit, r_squared
+
+
+def plot_latency_vs_centroid_without_outliers(analysis: LatencyFrequencyAnalysis) -> Path:
+    """Plot chunk latency versus centroid after removing 2-sigma outliers per axis."""
+    out = results_path() / "latency_vs_signal_frequency_without_outliers.png"
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for axis_analysis, color, label in (
+        (analysis.pitch, "tab:blue", "pitch"),
+        (analysis.yaw, "tab:orange", "yaw"),
+    ):
+        if not axis_analysis.chunks:
+            continue
+
+        centroid_hz = np.asarray([chunk.spectral_centroid_hz for chunk in axis_analysis.chunks], dtype=np.float64)
+        latency_s = np.asarray([chunk.latency_s for chunk in axis_analysis.chunks], dtype=np.float64)
+        keep = _keep_non_outliers(centroid_hz) & _keep_non_outliers(latency_s)
+        if not np.any(keep):
+            continue
+
+        centroid_kept = centroid_hz[keep]
+        latency_kept = latency_s[keep]
+        ax.scatter(centroid_kept, latency_kept, color=color, label=label, alpha=0.8)
+
+        fit = _line_of_best_fit(centroid_kept, latency_kept)
+        if fit is not None:
+            x_fit, y_fit, r_squared = fit
+            ax.plot(
+                x_fit,
+                y_fit,
+                color=color,
+                linewidth=2.0,
+                label=f"{label} fit (R^2={r_squared:.3f})",
+            )
+
+    ax.set_xlabel("spectral centroid (Hz)")
+    ax.set_ylabel("latency of best fit (s)")
+    ax.set_title("Latency vs signal frequency (without outliers)")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best")
     fig.tight_layout()
@@ -349,6 +424,8 @@ def main() -> None:
     _print_axis_report(analysis.pitch)
     _print_axis_report(analysis.yaw)
     out = _plot_latency_vs_centroid(analysis)
+    print(f"wrote plot: {out}")
+    out = plot_latency_vs_centroid_without_outliers(analysis)
     print(f"wrote plot: {out}")
 
 
