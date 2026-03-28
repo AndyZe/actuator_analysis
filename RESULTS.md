@@ -1,3 +1,11 @@
+# Results
+
+## Table of Contents
+
+- [What is the "latency of best fit" for each actuator across the entire dataset?](#what-is-the-latency-of-best-fit-for-each-actuator-across-the-entire-dataset)
+- [How does latency vary with movement magnitude?](#how-does-latency-vary-with-movement-magnitude)
+- [Pitch vs yaw comparison](#pitch-vs-yaw-comparison)
+
 ### What is the "latency of best fit" for each actuator across the entire dataset?
 
 For this calculation I used numpy.correlate. It looks at the entire dataset minus a small window around firing (excluded because firing is not normal motion.)
@@ -30,3 +38,19 @@ Attempting to make better sense of the data, I removed outliers beyond 1.5 stand
 ![Latency vs signal centroid frequency (outliers removed)](./graphics/latency_vs_signal_frequency_without_outliers.png)
 
 I added lines of best fit just because your questions asked if the trend is linear, but it's clear from a quick glance that it's not. Latency is much worse for low-frequency data. Latency is low and relatively constant for high-frequency tracking. The R^2 value is very low, less than 0.1.
+
+### Pitch vs yaw comparison
+
+I've already mentioned before, pitch and yaw had similar latencies across the dataset as a whole (0.2408 seconds for pitch vs 0.2145 seconds for yaw). The latency is a little larger for pitch and I can see from the plot below that the latency for pitch is almost always a positive value (i.e. it almost always lags). Probably this comes from "fighting against gravity", which yaw doesn't need to deal with.
+
+![Latency vs signal centroid frequency](./graphics/latency_vs_signal_frequency.png)
+
+To analyze overshoot, first we selected 60-second bins containing interesting movements. To do so, we calculated the signal centroid frequency again and discarded any bins with f< 1.0 Hz. Then within all the remaining bins, we shifted the `current` signal backward to align with the `target` signal. This is important, otherwise latency counts as settling time. Then we used a function to identify individual signal reversal events and calculated overshoot for each one. I checked the overshoot events that were detected by the script visually and they seemed reasonable.
+
+Results for overshoot...
+
+Overshoot analysis was done in scripts/overshoot.py.
+
+To analyze settling time, ...
+
+Results for settling time...

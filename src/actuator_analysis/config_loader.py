@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -118,3 +118,14 @@ def key_time_points(config_name: str = "defaults") -> KeyTimePoints:
         trigger_start=values[2],
         trigger_effects_done=values[3],
     )
+
+
+def format_recording_offset_timestamp(
+    offset_s: float,
+    *,
+    config_name: str = "defaults",
+) -> str:
+    """Format seconds from ``recording_start`` as UTC ISO text."""
+    recording_start = key_time_points(config_name=config_name).recording_start
+    timestamp = (recording_start + timedelta(seconds=offset_s)).replace(tzinfo=timezone.utc)
+    return timestamp.isoformat(timespec="microseconds").replace("+00:00", "Z")
