@@ -3,6 +3,7 @@ Significant motions at:
 
 trigger/fire goes to 1 at 08:15.65, no data prior.
 Then it stays at 1 for ~the rest of the dataset.
+Trigger seems to have an effect from ~08:15.65 to 08:28.71
 
 ## Latency comparison between actuators
 
