@@ -25,7 +25,7 @@ Trigger seems to have an effect from ~18:08:15.65 to 18:08:28.71
 
 - [x] Try a line of best fit, compute R^2, see if it looks good. If not, try a polynomial.
 
-- [ ] For each motion chunk and each axis, calculate and save overshoot and settling time.
+- [x] For each motion chunk and each axis, calculate and save overshoot and settling time.
 
 ## Deflection when triggered
 

@@ -96,18 +96,49 @@ Pitch step response (negligible overshoot)
 For yaw, the situation is similar. It rarely overshoots, thus the correct response is **N/A**. Here's an instance at 18:43:24.36 where the target signal is nearly an ideal step but yaw does not overshoot at all.
 
 ![Yaw step response (no overshoot)](./graphics/negligible_yaw_overshoot.png)
+Yaw step response (negligible overshoot)
 
-### Firing
+### Shooting Impact
 
-... It looks like the signals aren't perfectly synchronized. During firing, the /pitch/target plot jumps prior to trigger/fire going high.
+In regards to shooting, note that the Rerun signals aren't perfectly synchronized. During firing, the /pitch/target plot jumps prior to trigger/fire going high, for instance.
+
+![Unsynched signals](./graphics/unsynched_signals.png)
+A small synchronization discrepancy between trigger and the beginning of pitch motion
+
+It's difficult to tell but I'll assume the periods indicated below are when each joint recovered from the shot.
+
+![Pitch recovery period](./graphics/pitch_after_trigger.png)
+My assumed recovery period for pitch
+
+![Yaw recovery period](./graphics/yaw_after_trigger.png)
+My assumed recovery period for yaw
+
+#### Actuator deflection when the trigger fires
+
+Measuring from the plots shown above:
+
+Pitch deflects approximately **1.07 rad**.
+Yaw deflects approximately **1.76 rad**.
+
+#### Is the disturbance primarily in pitch, yaw, or both?
+
+Yaw deflects about 64% more than pitch but it's a large deflection for both axes.
+
+#### How quickly does the system recover to the commanded position?
+
+Pitch recovers in approximately **0.48s**, yaw recovers in approximately **3.02s**.
 
 ### Remaining thoughts
+
+These are a few scattered thoughts that may help the project.
 
 #### CAN vs ethercat
 
 Ethercat is the obvious choice.
 
-#### 
+#### Mechanical design to reduce recoil
+
+If you could mount both actuators in line with the barrel, that would reduce recoil.
 
 #### Choice of actuator
 
