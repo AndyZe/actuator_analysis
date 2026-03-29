@@ -6,8 +6,12 @@
 - [What is the "latency of best fit" for each actuator across the entire dataset?](#what-is-the-latency-of-best-fit-for-each-actuator-across-the-entire-dataset)
 - [How does latency vary with movement magnitude?](#how-does-latency-vary-with-movement-magnitude)
 - [Pitch vs yaw comparison](#pitch-vs-yaw-comparison)
-- [Overshoot of pitch and yaw](#overshoot-of-pitch-and-yaw)
-- [Settling time of pitch and yaw](#settling-time-of-pitch-and-yaw)
+  - [Overshoot of pitch and yaw](#overshoot-of-pitch-and-yaw)
+  - [Settling time of pitch and yaw](#settling-time-of-pitch-and-yaw)
+- [Shooting Impact](#shooting-impact)
+  - [Actuator deflection when the trigger fires](#actuator-deflection-when-the-trigger-fires)
+  - [Is the disturbance primarily in pitch, yaw, or both?](#is-the-disturbance-primarily-in-pitch-yaw-or-both)
+  - [How quickly does the system recover to the commanded position?](#how-quickly-does-the-system-recover-to-the-commanded-position)
 - [Remaining thoughts](#remaining-thoughts)
 
 ### Strategy
@@ -44,14 +48,12 @@ This was implemented in scripts/latency_vs_signal_frequency.py.
 The raw plot of latency vs signal centroid frequency is pretty noisy and has a lot of outliers, so it didn't tell me much initially. Here it is:
 
 ![Latency vs signal centroid frequency](./graphics/latency_vs_signal_frequency.png)
-Latency vs signal centroid frequency (outliers removed)
 
 Attempting to make better sense of the data, I removed outliers beyond 1.5 standard deviations. From eye-balling the graph, the latency is actually worse at lower signal frequencies. Your PID controllers do not track well at low frequencies, as already mentioned before. They seem to be tuned more for high-frequency response, i.e. tuned for better disturbance rejection I suppose.
 
 ![Latency vs signal centroid frequency (outliers removed)](./graphics/latency_vs_signal_frequency_without_outliers.png)
-Latency vs signal centroid frequency (outliers removed)
 
-I added lines of best fit just because your questions asked if the trend is linear, but it's clear from a quick glance that it's not. Latency is much worse for low-frequency data. Latency is low and relatively constant for high-frequency tracking. The R^2 value is very low, less than 0.1.
+I added lines of best fit just because your questions asked if the trend is linear, but it's clear from a quick glance that it's not. Latency is much worse for low-frequency data. Latency is low and relatively constant for high-frequency tracking. The R^2 values of the linear trend lines are very low, less than 0.1.
 
 If it's important for your application, you could improve low-frequency tracking by:
 
@@ -64,7 +66,6 @@ If it's important for your application, you could improve low-frequency tracking
 I've already mentioned, pitch and yaw had similar latencies across the dataset as a whole (0.2408 seconds for pitch vs 0.2145 seconds for yaw). The latency is a little larger for pitch and I can see from the plot below that the latency for pitch is almost always a positive value (i.e. it almost always lags). Probably this comes from fighting against gravity, which yaw doesn't need to deal with.
 
 ![Latency vs signal centroid frequency](./graphics/latency_vs_signal_frequency.png)
-Latency vs signal centroid frequency
 
 #### Overshoot of pitch and yaw
 
@@ -72,7 +73,7 @@ To analyze overshoot, I shifted the `current` signal backward to align with the 
 
 Then I used a function to identify individual signal reversal events and calculated overshoot for each one. Signal reversal was detected by checking the sign of the slope estimate, where slope was estimated from smoothed first differences. The smoothing was a simple moving average. (A Butterworth low-pass filter would be better).
 
-Finally, for simplicity, I only kept reversal events which were similar to a step. With this assumption, it was fair game to report overshoot as a percentage.
+Finally, for simplicity, I only kept reversal events which were similar to a step, i.e. followed by a plateau. With this simplification, it was easy to report overshoot as a percentage.
 
 I visually spot-checked the overshoot events detected by the script against the Rerun plots and tuned the algorithm to reduce false positives. It could use some more tuning if I had more time. This type of algorithm is finicky.
 
@@ -82,18 +83,18 @@ For yaw, average overshoot was **1.43%** and there were 35 overshoot events grea
 
 For pitch, average overshoot was **-7.80%**. There were 9 overshoot events greater than 10%. The negative sign means, pitch undershot more often than it overshot.
 
-The results indicate that pitch may be tuned less aggressively than yaw. I bet there is more inertia about pitch, so it takes more energy to move that joint. Finally, gravity may have been fighting against pitch whereas yaw does not have that issue. The gravity and other dynamics effects could be counteracted by running a dynamic model in the background and providing feedforward torques to the actuators. I've used the Drake simulator to great success with such things in the past.
+The results indicate that pitch may be tuned less aggressively than yaw. Likely there is more inertia about pitch, so it takes more energy to move. Finally, gravity may have been fighting against pitch whereas yaw does not have that issue. The gravity and other dynamic effects could be counteracted by running a dynamic model in the background and providing feedforward torques to the actuators. I've used the Drake simulator to great success with such things in the past.
 
 #### Settling time of pitch and yaw
 
 I attempted to solve for settling time in an automated way but the results were awful. Instead, I searched the Rerun graphs manually.
 
-For pitch, the previous section calculated that it rarely overshoots. In fact, even when I find a command signal which looks similar to an ideal step, the overshoot is negligible. For example, here at 18:06:55.135, there's a command which is very similar to an ideal step but the overshoot is much less than 1%. Thus, the proper response is **N/A**.
+For pitch, the previous section showed that it rarely overshoots. In fact, even when I find a command signal which looks similar to an ideal step, the overshoot is negligible. For example, here at 18:06:55.135, there's a command which is very similar to an ideal step but the overshoot is much less than 1%. Thus, settling time for the pitch joint is **N/A**.
 
 ![Pitch step response (negligible overshoot)](./graphics/pitch_zoomed_step_response.png)
 Pitch step response (negligible overshoot)
 
-For yaw, the situation is similar. It rarely overshoots, thus the correct response is **N/A**. Here's an instance at 18:43:24.36 where the target signal is nearly an ideal step but yaw does not overshoot at all.
+For yaw, the situation is similar. It rarely overshoots, thus the settling time is **N/A**. Here's an instance at 18:43:24.36 where the target signal is nearly an ideal step but yaw does not overshoot at all.
 
 ![Yaw step response (no overshoot)](./graphics/negligible_yaw_overshoot.png)
 Yaw step response (negligible overshoot)
