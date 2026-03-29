@@ -59,7 +59,7 @@ If it's important for your application, you could improve low-frequency tracking
 
 ### Pitch vs yaw comparison
 
-I've already mentioned, pitch and yaw had similar latencies across the dataset as a whole (0.2408 seconds for pitch vs 0.2145 seconds for yaw). The latency is a little larger for pitch and I can see from the plot below that the latency for pitch is almost always a positive value (i.e. it almost always lags). Probably this comes from "fighting against gravity", which yaw doesn't need to deal with.
+I've already mentioned, pitch and yaw had similar latencies across the dataset as a whole (0.2408 seconds for pitch vs 0.2145 seconds for yaw). The latency is a little larger for pitch and I can see from the plot below that the latency for pitch is almost always a positive value (i.e. it almost always lags). Probably this comes from fighting against gravity, which yaw doesn't need to deal with.
 
 ![Latency vs signal centroid frequency](./graphics/latency_vs_signal_frequency.png)
 
@@ -83,11 +83,13 @@ The results indicate that pitch may be tuned less aggressively than yaw. I bet t
 
 #### Settling time of pitch and yaw
 
-The data pipeline for settling time was the same as overshoot so I'll skip straight to reporting results. I used a 5% settling threshold.
+I attempted to solve for settling time in an automated way but the results were awful. Instead, I searched the Rerun graphs manually.
 
-For yaw, the average settling time was Xs.
+For pitch, the previous section calculated that it rarely overshoots. In fact, even when I find a command signal which looks similar to an ideal step, the overshoot is negligible. For example, here at 18:06:53.278, there's a command which is very similar to an ideal step but the overshoot is much less than 1%. Thus, the proper response is **N/A**.
 
-For pitch, the average settling time was Xs.
+![Pitch step response (negligible overshoot)](./graphics/pitch_zoomed_step_response.png)
+
+For yaw, TODO
 
 ### Firing
 
