@@ -1,5 +1,7 @@
 # actuator_analysis
 
+[View results here!](RESULTS.md)
+
 ## Table of contents
 
 - [Setup](#setup)

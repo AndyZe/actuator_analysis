@@ -1,3 +1,5 @@
+These are notes for myself.
+
 Recording starts at 2025-11-05 18:00:48.0, ends at ~ 2025-11-05 20:51:40
 
 Significant motions at:
@@ -29,9 +31,9 @@ Trigger seems to have an effect from ~18:08:15.65 to 18:08:28.71
 
 ## Deflection when triggered
 
-- [ ] Crop the data around trigger/fire going to 1
+- [x] Crop the data around trigger/fire going to 1
 
-- [ ] Estimate magnitude of deflection
+- [x] Estimate magnitude of deflection
 
 ## Bonus
 
@@ -40,5 +42,3 @@ Make a nice plot of inaccuracy at 100 yards relative to drone
 ## Include in writeup
 
 Figure titles and numbers
-
-Create pdf for email

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>RESULTS</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<h1 id="results">Results</h1>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ul>
+<li><a href="#strategy">Strategy</a></li>
+<li><a
+href="#what-is-the-latency-of-best-fit-for-each-actuator-across-the-entire-dataset">What
+is the "latency of best fit" for each actuator across the entire
+dataset?</a></li>
+<li><a href="#how-does-latency-vary-with-movement-magnitude">How does
+latency vary with movement magnitude?</a></li>
+<li><a href="#pitch-vs-yaw-comparison">Pitch vs yaw comparison</a>
+<ul>
+<li><a href="#overshoot-of-pitch-and-yaw">Overshoot of pitch and
+yaw</a></li>
+<li><a href="#settling-time-of-pitch-and-yaw">Settling time of pitch and
+yaw</a></li>
+</ul></li>
+<li><a href="#shooting-impact">Shooting Impact</a>
+<ul>
+<li><a href="#actuator-deflection-when-the-trigger-fires">Actuator
+deflection when the trigger fires</a></li>
+<li><a href="#is-the-disturbance-primarily-in-pitch-yaw-or-both">Is the
+disturbance primarily in pitch, yaw, or both?</a></li>
+<li><a
+href="#how-quickly-does-the-system-recover-to-the-commanded-position">How
+quickly does the system recover to the commanded position?</a></li>
+</ul></li>
+<li><a href="#remaining-thoughts">Remaining thoughts</a></li>
+</ul>
+<h3 id="strategy">Strategy</h3>
+<p>I used time series and Fourier analysis to simplify the problem as
+much as possible.</p>
+<p>Python was chosen because it's great for quick data analysis. I tried
+to follow good Python practices such as <code>venv</code>and reusable
+modules although I usually work with C++. There is a good collection of
+unit tests and CI, as well.</p>
+<p>I didn't filter the data. The noise levels look low already and
+filtering would introduce latency.</p>
+<h3
+id="what-is-the-latency-of-best-fit-for-each-actuator-across-the-entire-dataset">What
+is the "latency of best fit" for each actuator across the entire
+dataset?</h3>
+<p>For this calculation I used numpy.correlate. It looks at the entire
+dataset minus a small window around firing (excluded because firing is
+not normal motion.)</p>
+<p>For pitch, the "latency of best fit" was <strong>0.2408
+seconds</strong>. For yaw, the "latency of best fit" was <strong>0.2145
+seconds</strong>. Very similar.</p>
+<p>The script used in this calculation was
+scripts/bulk_latency_calculation.py.</p>
+<p>As a sanity check, here are graphs comparing the two signals for the
+first 100s.</p>
+<p><img
+src="./graphics/pitch_current_and_target_except_firing_first_100s.png"
+alt="Pitch current and target except firing (first 100 s)" /></p>
+<p><img
+src="./graphics/yaw_current_and_target_except_firing_first_100s.png"
+alt="Yaw current and target except firing (first 100 s)" /></p>
+<p>I can tell from the pitch graph already that <strong>pitch does not
+track slow position changes well</strong>.</p>
+<h3 id="how-does-latency-vary-with-movement-magnitude">How does latency
+vary with movement magnitude?</h3>
+<p>I used the frequency of the signal as a proxy for "magnitude",
+because I think the question is really asking about frequency response
+(slow motions vs fast motions). To grok this, I separated the data into
+60-second segments (again, excluding a small window around firing
+because it's not normal motion). Then I calculated the spectral centroid
+of target position for each segment and the "latency of best fit." For
+latency of best fit, again, I used numpy.centroid. Thus I could plot
+latency vs signal frequency and check if it's linear.</p>
+<p>This was implemented in scripts/latency_vs_signal_frequency.py.</p>
+<p>The raw plot of latency vs signal centroid frequency is pretty noisy
+and has a lot of outliers, so it didn't tell me much initially. Here it
+is:</p>
+<p><img src="./graphics/latency_vs_signal_frequency.png"
+alt="Latency vs signal centroid frequency" /></p>
+<p>Attempting to make better sense of the data, I removed outliers
+beyond 1.5 standard deviations. From eye-balling the graph, the latency
+is actually worse at lower signal frequencies. Your PID controllers do
+not track well at low frequencies, as already mentioned before. They
+seem to be tuned more for high-frequency response, i.e. tuned for better
+disturbance rejection I suppose.</p>
+<p><img
+src="./graphics/latency_vs_signal_frequency_without_outliers.png"
+alt="Latency vs signal centroid frequency (outliers removed)" /></p>
+<p>I added lines of best fit just because your questions asked if the
+trend is linear, but it's clear from a quick glance that it's not.
+Latency is much worse for low-frequency data. Latency is low and
+relatively constant for high-frequency tracking. The R^2 values of the
+linear trend lines are very low, less than 0.1.</p>
+<p>If it's important for your application, you could improve
+low-frequency tracking by:</p>
+<ul>
+<li>Adding some integral gain</li>
+<li>Switching to velocity control</li>
+<li>Using a model of the system to calculate feedforwad torque</li>
+</ul>
+<h3 id="pitch-vs-yaw-comparison">Pitch vs yaw comparison</h3>
+<p>I've already mentioned, pitch and yaw had similar latencies across
+the dataset as a whole (0.2408 seconds for pitch vs 0.2145 seconds for
+yaw). The latency is a little larger for pitch and I can see from the
+plot below that the latency for pitch is almost always a positive value
+(i.e. it almost always lags). Probably this comes from fighting against
+gravity, which yaw doesn't need to deal with.</p>
+<p><img src="./graphics/latency_vs_signal_frequency.png"
+alt="Latency vs signal centroid frequency" /></p>
+<h4 id="overshoot-of-pitch-and-yaw">Overshoot of pitch and yaw</h4>
+<p>To analyze overshoot, I shifted the <code>current</code> signal
+backward to align with the <code>target</code> signal. It was shifted by
+the same latency I had calculated with numpy.correlate previously. This
+is important, otherwise latency counts as settling time. Again, I
+intentionally skipped a short window around firing because that's not
+normal motion.</p>
+<p>Then I used a function to identify individual signal reversal events
+and calculated overshoot for each one. Signal reversal was detected by
+checking the sign of the slope estimate, where slope was estimated from
+smoothed first differences. The smoothing was a simple moving average.
+(A Butterworth low-pass filter would be better).</p>
+<p>Finally, for simplicity, I only kept reversal events which were
+similar to a step, i.e. followed by a plateau. With this simplification,
+it was easy to report overshoot as a percentage.</p>
+<p>I visually spot-checked the overshoot events detected by the script
+against the Rerun plots and tuned the algorithm to reduce false
+positives. It could use some more tuning if I had more time. This type
+of algorithm is finicky.</p>
+<p>This overshoot analysis was performed in
+scripts/overshoot_and_settling.py.</p>
+<p>For yaw, average overshoot was <strong>1.43%</strong> and there were
+35 overshoot events greater than 10%.</p>
+<p>For pitch, average overshoot was <strong>-7.80%</strong>. There were
+9 overshoot events greater than 10%. The negative sign means, pitch
+undershot more often than it overshot.</p>
+<p>The results indicate that pitch may be tuned less aggressively than
+yaw. Likely there is more inertia about pitch, so it takes more energy
+to move. Finally, gravity may have been fighting against pitch whereas
+yaw does not have that issue. The gravity and other dynamic effects
+could be counteracted by running a dynamic model in the background and
+providing feedforward torques to the actuators. I've used the Drake
+simulator to great success with such things in the past.</p>
+<h4 id="settling-time-of-pitch-and-yaw">Settling time of pitch and
+yaw</h4>
+<p>I attempted to solve for settling time in an automated way but the
+results were awful. Instead, I searched the Rerun graphs manually.</p>
+<p>For pitch, the previous section showed that it rarely overshoots. In
+fact, even when I find a command signal which looks similar to an ideal
+step, the overshoot is negligible. For example, here at 18:06:55.135,
+there's a command which is very similar to an ideal step but the
+overshoot is much less than 1%. Thus, settling time for the pitch joint
+is <strong>N/A</strong>.</p>
+<p><img src="./graphics/pitch_zoomed_step_response.png"
+alt="Pitch step response (negligible overshoot)" /> Pitch step response
+(negligible overshoot)</p>
+<p>For yaw, the situation is similar. It rarely overshoots, thus the
+settling time is <strong>N/A</strong>. Here's an instance at 18:43:24.36
+where the target signal is nearly an ideal step but yaw does not
+overshoot at all.</p>
+<p><img src="./graphics/negligible_yaw_overshoot.png"
+alt="Yaw step response (no overshoot)" /> Yaw step response (negligible
+overshoot)</p>
+<h3 id="shooting-impact">Shooting Impact</h3>
+<p>In regards to shooting, note that the Rerun signals aren't perfectly
+synchronized. During firing, the /pitch/target plot jumps prior to
+trigger/fire going high, for instance.</p>
+<p><img src="./graphics/unsynched_signals.png"
+alt="Unsynched signals" /> A small synchronization discrepancy between
+trigger and the beginning of pitch motion</p>
+<p>It's difficult to tell but I'll assume the periods indicated below
+are when each joint recovered from the shot.</p>
+<p><img src="./graphics/pitch_after_trigger.png"
+alt="Pitch recovery period" /> My assumed recovery period for pitch</p>
+<p><img src="./graphics/yaw_after_trigger.png"
+alt="Yaw recovery period" /> My assumed recovery period for yaw</p>
+<h4 id="actuator-deflection-when-the-trigger-fires">Actuator deflection
+when the trigger fires</h4>
+<p>Measuring from the plots shown above:</p>
+<p>Pitch deflects approximately <strong>1.07 rad</strong>. Yaw deflects
+approximately <strong>1.76 rad</strong>.</p>
+<h4 id="is-the-disturbance-primarily-in-pitch-yaw-or-both">Is the
+disturbance primarily in pitch, yaw, or both?</h4>
+<p>Yaw deflects about 64% more than pitch but it's a large deflection
+for both axes.</p>
+<h4
+id="how-quickly-does-the-system-recover-to-the-commanded-position">How
+quickly does the system recover to the commanded position?</h4>
+<p>Pitch recovers in approximately <strong>0.48s</strong>, yaw recovers
+in approximately <strong>3.02s</strong>.</p>
+<h3 id="remaining-thoughts">Remaining thoughts</h3>
+<p>These are a few scattered thoughts that may help the project.</p>
+<h4 id="can-vs-ethercat">CAN vs ethercat</h4>
+<p>Ethercat is the obvious choice.</p>
+<h4 id="mechanical-design-to-reduce-recoil">Mechanical design to reduce
+recoil</h4>
+<p>If you could mount both actuators in line with the barrel, that would
+reduce recoil.</p>
+<h4 id="choice-of-actuator">Choice of actuator</h4>
+<p>Harmonic drives are generally more accurate and harder to backdrive
+than single-stage planetary geartrains. A harmonic drive would likely be
+preferred for this application. There are other actuator types to
+consider, as well, which I don't know so much about.</p>
+<h4 id="position-vs-velocity-control">Position vs velocity control</h4>
+<p>In the robotics world, it's been known for decades that the choice of
+velocity control or position control has a large effect on how the robot
+behaves. For example, Duchaine (2007) showed that a robot can be guided
+through a maze 18% faster if velocity control is used.</p>
+<p><img src="./graphics/duchaine_maze.png"
+alt="Duchaine maze experiment" /> A robotic maze experiment where
+velocity control outperformed position control</p>
+<p>Velocity control is generally chosen for faster tracking or smoother
+output. Position control is generally chosen for a more accurate final
+position. You need both accuracy and speed so it might be hard to
+choose.</p>
+<h4 id="actuator-brakes">Actuator brakes</h4>
+<p>I believe it takes a few hundred milliseconds for actuator brakes to
+activate. You could engage the brakes before the turret fires to ensure
+it's completely stable.</p>
+<h4 id="smith-predictor">Smith predictor</h4>
+<p>In control theory, there's a concept called a Smith predictor. For
+linear systems with fixed latency, you can implement a Smith predictor
+to completely counteract the affects of latency.</p>
+<p>You can do something similar for nonlinear systems by predicting the
+state of the system forward, but it's not as elegant or perfect as far
+as I know.</p>
+</body>
+</html>
