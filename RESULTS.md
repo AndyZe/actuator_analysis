@@ -44,10 +44,12 @@ This was implemented in scripts/latency_vs_signal_frequency.py.
 The raw plot of latency vs signal centroid frequency is pretty noisy and has a lot of outliers, so it didn't tell me much initially. Here it is:
 
 ![Latency vs signal centroid frequency](./graphics/latency_vs_signal_frequency.png)
+Latency vs signal centroid frequency (outliers removed)
 
 Attempting to make better sense of the data, I removed outliers beyond 1.5 standard deviations. From eye-balling the graph, the latency is actually worse at lower signal frequencies. Your PID controllers do not track well at low frequencies, as already mentioned before. They seem to be tuned more for high-frequency response, i.e. tuned for better disturbance rejection I suppose.
 
 ![Latency vs signal centroid frequency (outliers removed)](./graphics/latency_vs_signal_frequency_without_outliers.png)
+Latency vs signal centroid frequency (outliers removed)
 
 I added lines of best fit just because your questions asked if the trend is linear, but it's clear from a quick glance that it's not. Latency is much worse for low-frequency data. Latency is low and relatively constant for high-frequency tracking. The R^2 value is very low, less than 0.1.
 
@@ -62,6 +64,7 @@ If it's important for your application, you could improve low-frequency tracking
 I've already mentioned, pitch and yaw had similar latencies across the dataset as a whole (0.2408 seconds for pitch vs 0.2145 seconds for yaw). The latency is a little larger for pitch and I can see from the plot below that the latency for pitch is almost always a positive value (i.e. it almost always lags). Probably this comes from fighting against gravity, which yaw doesn't need to deal with.
 
 ![Latency vs signal centroid frequency](./graphics/latency_vs_signal_frequency.png)
+Latency vs signal centroid frequency
 
 #### Overshoot of pitch and yaw
 
@@ -85,11 +88,14 @@ The results indicate that pitch may be tuned less aggressively than yaw. I bet t
 
 I attempted to solve for settling time in an automated way but the results were awful. Instead, I searched the Rerun graphs manually.
 
-For pitch, the previous section calculated that it rarely overshoots. In fact, even when I find a command signal which looks similar to an ideal step, the overshoot is negligible. For example, here at 18:06:53.278, there's a command which is very similar to an ideal step but the overshoot is much less than 1%. Thus, the proper response is **N/A**.
+For pitch, the previous section calculated that it rarely overshoots. In fact, even when I find a command signal which looks similar to an ideal step, the overshoot is negligible. For example, here at 18:06:55.135, there's a command which is very similar to an ideal step but the overshoot is much less than 1%. Thus, the proper response is **N/A**.
 
 ![Pitch step response (negligible overshoot)](./graphics/pitch_zoomed_step_response.png)
+Pitch step response (negligible overshoot)
 
-For yaw, TODO
+For yaw, the situation is similar. It rarely overshoots, thus the correct response is **N/A**. Here's an instance at 18:43:24.36 where the target signal is nearly an ideal step but yaw does not overshoot at all.
+
+![Yaw step response (no overshoot)](./graphics/negligible_yaw_overshoot.png)
 
 ### Firing
 
@@ -112,6 +118,7 @@ Harmonic drives are generally more accurate and harder to backdrive than single-
 In the robotics world, it's been known for decades that the choice of velocity control or position control has a large effect on how the robot behaves. For example, Duchaine (2007) showed that a robot can be guided through a maze 18% faster if velocity control is used.
 
 ![Duchaine maze experiment](./graphics/duchaine_maze.png)
+A robotic maze experiment where velocity control outperformed position control
 
 Velocity control is generally chosen for faster tracking or smoother output. Position control is generally chosen for a more accurate final position. You need both accuracy and speed so it might be hard to choose.
 
